@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <style>
+    body {
+      margin: 0;
+      height: 100vh;
+      background: #111;
+
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 50px;
+    }
+
+    .eyes {
+      display: flex;
+      gap: 80px;
+    }
+
+    .eye {
+      width: 70px;
+      height: 70px;
+      background: white;
+      border-radius: 50%;
+
+      animation: blink 4s infinite;
+    }
+
+    @keyframes blink {
+      0%, 90%, 100% {
+        transform: scaleY(1);
+      }
+
+      93%, 97% {
+        transform: scaleY(0.05);
+      }
+    }
+
+    .mouth {
+      width: 140px;
+      height: 35px;
+      border: 5px solid white;
+      border-top: none;
+      border-radius: 0 0 25px 25px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="eyes">
+    <div class="eye"></div>
+    <div class="eye"></div>
+  </div>
+
+  <div class="mouth"></div>
+
+</body>
+</html>
