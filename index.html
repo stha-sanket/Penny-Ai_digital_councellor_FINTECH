@@ -15,9 +15,29 @@
       align-items: center;
     }
 
+    .face {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 50px;
+    }
+
     .eyes {
       display: flex;
       gap: 140px;
+    }
+
+    .mouth {
+      width: 80px;
+      height: 24px;
+      background: #1eff00;
+      clip-path: polygon(
+        0% 0%, 100% 0%,
+        100% 50%, 75% 50%,
+        75% 100%, 25% 100%,
+        25% 50%, 0% 50%
+      );
+      filter: drop-shadow(0 0 18px #29B6FF);
     }
 
     .eye {
@@ -92,9 +112,12 @@
 
 <body>
 
-  <div class="eyes">
-    <div class="eye"></div>
-    <div class="eye"></div>
+  <div class="face">
+    <div class="eyes">
+      <div class="eye"></div>
+      <div class="eye"></div>
+    </div>
+    <div class="mouth"></div>
   </div>
 
 </body>
