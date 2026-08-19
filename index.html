@@ -11,10 +11,8 @@
       background: #000;
 
       display: flex;
-      flex-direction: column;
       justify-content: center;
       align-items: center;
-      gap: 80px;
     }
 
     .eyes {
@@ -22,11 +20,10 @@
       gap: 140px;
     }
 
-    /* Pixelated circle eye */
     .eye {
       width: 180px;
       height: 180px;
-      background: #008cff;
+      background: #29B6FF;
 
       clip-path: polygon(
         30% 0%,
@@ -59,7 +56,7 @@
         30% 5%
       );
 
-      filter: drop-shadow(0 0 15px #008cff);
+      filter: drop-shadow(0 0 18px #29B6FF);
 
       animation: blink 4s infinite;
       transform-origin: center;
@@ -74,18 +71,6 @@
         transform: scaleY(0.06);
       }
     }
-
-    /* Simple pixel-style smile */
-    .mouth {
-      width: 320px;
-      height: 70px;
-
-      border-left: 10px solid #008cff;
-      border-right: 10px solid #008cff;
-      border-bottom: 10px solid #008cff;
-
-      filter: drop-shadow(0 0 15px #008cff);
-    }
   </style>
 </head>
 
@@ -95,8 +80,6 @@
     <div class="eye"></div>
     <div class="eye"></div>
   </div>
-
-  <div class="mouth"></div>
 
 </body>
 </html>
