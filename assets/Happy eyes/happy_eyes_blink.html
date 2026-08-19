@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <style>
+    body {
+      margin: 0;
+      height: 100vh;
+      background: #000100;
+
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .face {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 50px;
+    }
+
+    .eyes {
+      display: flex;
+      gap: 140px;
+    }
+
+    .mouth {
+      width: 80px;
+      height: 24px;
+      background: #1eff00;
+      clip-path: polygon(
+        0% 0%, 100% 0%,
+        100% 50%, 75% 50%,
+        75% 100%, 25% 100%,
+        25% 50%, 0% 50%
+      );
+      filter: drop-shadow(0 0 18px #29B6FF);
+    }
+
+    .eye {
+      width: 300px;
+      height: 300px;
+      background: #1eff00;
+
+      clip-path: polygon(
+        0% 75%,
+        0% 50%,
+        10% 50%,
+        10% 35%,
+        25% 35%,
+        25% 20%,
+        35% 20%,
+        35% 10%,
+        65% 10%,
+        65% 20%,
+        75% 20%,
+        75% 35%,
+        90% 35%,
+        90% 50%,
+        100% 50%,
+        100% 75%,
+        85% 75%,
+        85% 60%,
+        75% 60%,
+        75% 45%,
+        60% 45%,
+        60% 35%,
+        40% 35%,
+        40% 45%,
+        25% 45%,
+        25% 60%,
+        15% 60%,
+        15% 75%
+      );
+
+      filter: drop-shadow(0 0 18px #29B6FF);
+
+      animation: blink 4s infinite;
+      transform-origin: center;
+    }
+
+    @keyframes blink {
+      0%, 90%, 100% {
+        transform: scaleY(1);
+      }
+
+      93%, 97% {
+        transform: scaleY(0.06);
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="face">
+    <div class="eyes">
+      <div class="eye"></div>
+      <div class="eye"></div>
+    </div>
+    <div class="mouth"></div>
+  </div>
+
+</body>
+</html>
