@@ -8,7 +8,7 @@
     body {
       margin: 0;
       height: 100vh;
-      background: #111;
+      background: #000;
 
       display: flex;
       flex-direction: column;
@@ -22,36 +22,47 @@
       gap: 140px;
     }
 
+    /* Pixelated circle eye */
     .eye {
       width: 180px;
       height: 180px;
-      background: white;
+      background: #008cff;
 
-      /* Pixelated circle */
       clip-path: polygon(
-        25% 0%,
-        75% 0%,
-        75% 5%,
-        90% 5%,
-        90% 15%,
-        100% 15%,
-        100% 85%,
-        90% 85%,
-        90% 95%,
-        75% 95%,
-        75% 100%,
-        25% 100%,
-        25% 95%,
-        10% 95%,
-        10% 85%,
-        0% 85%,
-        0% 15%,
-        10% 15%,
-        10% 5%,
-        25% 5%
+        30% 0%,
+        70% 0%,
+        70% 5%,
+        85% 5%,
+        85% 15%,
+        95% 15%,
+        95% 30%,
+        100% 30%,
+        100% 70%,
+        95% 70%,
+        95% 85%,
+        85% 85%,
+        85% 95%,
+        70% 95%,
+        70% 100%,
+        30% 100%,
+        30% 95%,
+        15% 95%,
+        15% 85%,
+        5% 85%,
+        5% 70%,
+        0% 70%,
+        0% 30%,
+        5% 30%,
+        5% 15%,
+        15% 15%,
+        15% 5%,
+        30% 5%
       );
 
+      filter: drop-shadow(0 0 15px #008cff);
+
       animation: blink 4s infinite;
+      transform-origin: center;
     }
 
     @keyframes blink {
@@ -60,16 +71,20 @@
       }
 
       93%, 97% {
-        transform: scaleY(0.05);
+        transform: scaleY(0.06);
       }
     }
 
+    /* Simple pixel-style smile */
     .mouth {
       width: 320px;
-      height: 80px;
-      border: 10px solid white;
-      border-top: none;
-      border-radius: 0 0 60px 60px;
+      height: 70px;
+
+      border-left: 10px solid #008cff;
+      border-right: 10px solid #008cff;
+      border-bottom: 10px solid #008cff;
+
+      filter: drop-shadow(0 0 15px #008cff);
     }
   </style>
 </head>
