@@ -556,13 +556,7 @@
 
   <!-- Top Navigation -->
   <div class="top-bar">
-    <a href="index.html" class="back-btn" id="backBtn">
-      <svg viewBox="0 0 24 24">
-        <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
-      </svg>
-      <span>Penny</span>
-    </a>
-    <span class="top-bar-title">Chat & Voice</span>
+    <span class="top-bar-title">Penny — Chat & Voice</span>
     <div class="connection-indicator">
       <div class="connection-dot"></div>
       <span>Connected</span>
@@ -647,6 +641,13 @@
     let recognition = null;
     let hasFirstMessage = false;
 
+    // ─── BroadcastChannel — send state to face page ───
+    const channel = new BroadcastChannel('penny-state');
+
+    function broadcastState(state) {
+      channel.postMessage({ state });
+    }
+
     // ─── Speech Recognition Setup ───
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -661,6 +662,7 @@
         micBtn.classList.add('recording');
         voiceVisualizer.classList.add('active', 'listening');
         setStatus('listening...', 'active');
+        broadcastState('listening');
       };
 
       recognition.onresult = (event) => {
@@ -745,6 +747,9 @@
       isListening = false;
       micBtn.classList.remove('recording');
       voiceVisualizer.classList.remove('active', 'listening');
+      if (!isProcessing && !isSpeaking) {
+        broadcastState('idle');
+      }
     }
 
     // ─── Handle User Message ───
@@ -759,6 +764,7 @@
       addMessage(text, 'user');
       setStatus('thinking...', 'active');
       isProcessing = true;
+      broadcastState('thinking');
 
       // Add "thinking" bubble
       const thinkingEl = addMessage('', 'bot', true);
@@ -777,6 +783,7 @@
           : 'Something went wrong: ' + err.message;
         addMessage(errorMsg, 'bot');
         setStatus('error — check ollama', '');
+        broadcastState('idle');
       }
     }
 
@@ -807,7 +814,8 @@ ALWAYS write like this: "मेरो नाम पेनी हो" — this is
           stream: false,
           options: {
             temperature: 0.7,
-            num_predict: 256
+            num_predict: 128,
+            num_ctx: 1024
           }
         })
       });
@@ -856,6 +864,7 @@ ALWAYS write like this: "मेरो नाम पेनी हो" — this is
       synthesis.cancel();
       isSpeaking = true;
       setStatus('speaking...', 'speaking');
+      broadcastState('speaking');
 
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 1.0;
@@ -878,6 +887,7 @@ ALWAYS write like this: "मेरो नाम पेनी हो" — this is
 
       isSpeaking = true;
       setStatus('speaking (nepali)...', 'speaking');
+      broadcastState('speaking');
 
       try {
         const lang = hasNepali(text) ? 'ne' : 'en';
@@ -906,6 +916,7 @@ ALWAYS write like this: "मेरो नाम पेनी हो" — this is
       isSpeaking = false;
       voiceVisualizer.classList.remove('active');
       setStatus('tap the mic or type to talk', '');
+      broadcastState('idle');
     }
 
     synthesis.onvoiceschanged = () => synthesis.getVoices();

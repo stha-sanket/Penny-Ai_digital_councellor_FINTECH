@@ -4,9 +4,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Penny — AI Digital Counsellor</title>
-  <meta name="description"
-    content="Penny is your AI digital counsellor. Meet Penny face-to-face and navigate to the chat to start a conversation.">
+  <title>Penny — Face</title>
+  <meta name="description" content="Penny AI digital counsellor — live face display.">
   <link
     href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
     rel="stylesheet">
@@ -26,25 +25,18 @@
       --green-glow: rgba(30, 255, 0, 0.3);
       --blue-glow: #29B6FF;
       --bg: #000100;
-      --surface: rgba(30, 255, 0, 0.04);
-      --surface-hover: rgba(30, 255, 0, 0.08);
-      --border: rgba(30, 255, 0, 0.12);
-      --text: #c8ffc0;
-      --text-dim: rgba(200, 255, 192, 0.5);
     }
 
     body {
       margin: 0;
-      min-height: 100vh;
+      width: 100vw;
+      height: 100vh;
       background: var(--bg);
-      font-family: 'Outfit', sans-serif;
-      color: var(--text);
       display: flex;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
       overflow: hidden;
-      position: relative;
+      cursor: none;
     }
 
     /* ─── Scanline overlay ─── */
@@ -62,6 +54,21 @@
           rgba(0, 0, 0, 0.08) 4px);
       pointer-events: none;
       z-index: 9999;
+    }
+
+    /* ─── Grid Background ─── */
+    .grid-bg {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image:
+        linear-gradient(rgba(30, 255, 0, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(30, 255, 0, 0.025) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+      z-index: 0;
     }
 
     /* ─── Floating particles ─── */
@@ -86,147 +93,45 @@
     }
 
     @keyframes floatUp {
-      0% {
-        opacity: 0;
-        transform: translateY(100vh) scale(0.5);
-      }
-
-      10% {
-        opacity: 0.6;
-      }
-
-      90% {
-        opacity: 0.3;
-      }
-
-      100% {
-        opacity: 0;
-        transform: translateY(-10vh) scale(1.2);
-      }
-    }
-
-    /* ─── Grid Background ─── */
-    .grid-bg {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background-image:
-        linear-gradient(rgba(30, 255, 0, 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(30, 255, 0, 0.03) 1px, transparent 1px);
-      background-size: 60px 60px;
-      pointer-events: none;
-      z-index: 0;
-    }
-
-    /* ─── Main Content ─── */
-    .main-content {
-      position: relative;
-      z-index: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 40px;
-    }
-
-    /* ─── Title ─── */
-    .title-section {
-      text-align: center;
-      animation: fadeInDown 1s ease;
-    }
-
-    .title-section h1 {
-      font-size: 3.5rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      background: linear-gradient(135deg, var(--green) 0%, #00e5ff 50%, var(--green) 100%);
-      background-size: 200% 200%;
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      animation: gradientShift 4s ease infinite;
-    }
-
-    .title-section p {
-      margin-top: 8px;
-      font-size: 1rem;
-      font-family: 'JetBrains Mono', monospace;
-      color: var(--text-dim);
-      letter-spacing: 0.15em;
-      text-transform: uppercase;
-    }
-
-    @keyframes gradientShift {
-      0%, 100% { background-position: 0% 50%; }
-      50% { background-position: 100% 50%; }
-    }
-
-    @keyframes fadeInDown {
-      from { opacity: 0; transform: translateY(-30px); }
-      to { opacity: 1; transform: translateY(0); }
+      0% { opacity: 0; transform: translateY(100vh) scale(0.5); }
+      10% { opacity: 0.5; }
+      90% { opacity: 0.2; }
+      100% { opacity: 0; transform: translateY(-10vh) scale(1.2); }
     }
 
     /* ─── Robot Face ─── */
     .robot-container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
       position: relative;
-      animation: fadeInUp 1.2s ease;
-    }
-
-    @keyframes fadeInUp {
-      from { opacity: 0; transform: translateY(30px); }
-      to { opacity: 1; transform: translateY(0); }
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     .face {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 40px;
+      gap: 50px;
       transition: transform 0.3s ease;
     }
 
-    .face:hover {
-      transform: scale(1.03);
-    }
-
+    /* ── Listening state ── */
     .face.listening {
-      transform: scale(1.05);
-    }
-
-    .eyes {
-      display: flex;
-      gap: 100px;
-    }
-
-    .eye {
-      width: 180px;
-      height: 180px;
-      background: var(--green);
-      clip-path: polygon(35% 0%, 65% 0%, 65% 5%, 75% 5%, 75% 10%, 85% 10%, 85% 15%, 90% 15%,
-          90% 25%, 95% 25%, 95% 35%, 100% 35%, 100% 65%, 95% 65%, 95% 75%,
-          90% 75%, 90% 85%, 85% 85%, 85% 90%, 75% 90%, 75% 95%, 65% 95%,
-          65% 100%, 35% 100%, 35% 95%, 25% 95%, 25% 90%, 15% 90%, 15% 85%,
-          10% 85%, 10% 75%, 5% 75%, 5% 65%, 0% 65%, 0% 35%, 5% 35%, 5% 25%,
-          10% 25%, 10% 15%, 15% 15%, 15% 10%, 25% 10%, 25% 5%, 35% 5%);
-      filter: drop-shadow(0 0 24px var(--blue-glow));
-      animation: blink 4s infinite;
-      transform-origin: center;
-      transition: background 0.3s ease, filter 0.3s ease;
-    }
-
-    .eye:hover {
-      filter: drop-shadow(0 0 40px var(--green-glow));
+      transform: scale(1.04);
     }
 
     .face.listening .eye {
       background: #00e5ff;
-      filter: drop-shadow(0 0 30px rgba(0, 229, 255, 0.6));
+      filter: drop-shadow(0 0 35px rgba(0, 229, 255, 0.7));
     }
 
+    .face.listening .mouth {
+      background: #00e5ff;
+      filter: drop-shadow(0 0 24px rgba(0, 229, 255, 0.6));
+    }
+
+    /* ── Speaking / Happy state ── */
     .face.happy .eye {
       clip-path: polygon(0% 75%, 0% 50%, 10% 50%, 10% 35%, 25% 35%, 25% 20%, 35% 20%, 35% 10%,
           65% 10%, 65% 20%, 75% 20%, 75% 35%, 90% 35%, 90% 50%, 100% 50%, 100% 75%,
@@ -234,19 +139,42 @@
           25% 45%, 25% 60%, 15% 60%, 15% 75%);
     }
 
+    /* ─── Eyes ─── */
+    .eyes {
+      display: flex;
+      gap: 120px;
+    }
+
+    .eye {
+      width: 220px;
+      height: 220px;
+      background: var(--green);
+      clip-path: polygon(35% 0%, 65% 0%, 65% 5%, 75% 5%, 75% 10%, 85% 10%, 85% 15%, 90% 15%,
+          90% 25%, 95% 25%, 95% 35%, 100% 35%, 100% 65%, 95% 65%, 95% 75%,
+          90% 75%, 90% 85%, 85% 85%, 85% 90%, 75% 90%, 75% 95%, 65% 95%,
+          65% 100%, 35% 100%, 35% 95%, 25% 95%, 25% 90%, 15% 90%, 15% 85%,
+          10% 85%, 10% 75%, 5% 75%, 5% 65%, 0% 65%, 0% 35%, 5% 35%, 5% 25%,
+          10% 25%, 10% 15%, 15% 15%, 15% 10%, 25% 10%, 25% 5%, 35% 5%);
+      filter: drop-shadow(0 0 28px var(--blue-glow));
+      animation: blink 4s infinite;
+      transform-origin: center;
+      transition: background 0.3s ease, filter 0.3s ease, clip-path 0.3s ease;
+    }
+
     @keyframes blink {
       0%, 90%, 100% { transform: scaleY(1); }
       93%, 97% { transform: scaleY(0.06); }
     }
 
+    /* ─── Mouth ─── */
     .mouth {
-      width: 60px;
-      height: 20px;
+      width: 70px;
+      height: 22px;
       background: var(--green);
       clip-path: polygon(0% 0%, 100% 0%, 100% 50%, 75% 50%,
           75% 100%, 25% 100%, 25% 50%, 0% 50%);
-      filter: drop-shadow(0 0 16px var(--blue-glow));
-      transition: all 0.1s ease;
+      filter: drop-shadow(0 0 18px var(--blue-glow));
+      transition: all 0.15s ease;
     }
 
     .mouth.talking {
@@ -254,140 +182,69 @@
     }
 
     @keyframes talk {
-      0% { height: 12px; width: 48px; }
-      50% { height: 34px; width: 65px; }
-      100% { height: 24px; width: 56px; }
-    }
-
-    .face.listening .mouth {
-      background: #00e5ff;
-      filter: drop-shadow(0 0 20px rgba(0, 229, 255, 0.5));
-    }
-
-    /* ─── Status ─── */
-    .status {
-      margin-top: 24px;
-      font-size: 0.9rem;
-      font-family: 'JetBrains Mono', monospace;
-      color: var(--text-dim);
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      min-height: 24px;
-      transition: color 0.3s ease;
-      animation: fadeInUp 1.4s ease;
-    }
-
-    .status.active {
-      color: #00e5ff;
-      text-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
-    }
-
-    .status.speaking {
-      color: var(--green);
-      text-shadow: 0 0 10px var(--green-glow);
+      0% { height: 14px; width: 54px; }
+      50% { height: 40px; width: 80px; }
+      100% { height: 28px; width: 64px; }
     }
 
     /* ─── Ambient glow ─── */
     .ambient-glow {
       position: absolute;
-      width: 600px;
-      height: 600px;
-      background: radial-gradient(circle, var(--green-glow) 0%, rgba(30, 255, 0, 0.05) 40%, transparent 70%);
+      width: 700px;
+      height: 700px;
+      background: radial-gradient(circle, var(--green-glow) 0%, rgba(30, 255, 0, 0.04) 40%, transparent 70%);
       border-radius: 50%;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
       pointer-events: none;
+      opacity: 0.4;
+      transition: all 0.5s ease;
+    }
+
+    /* Glow changes with state */
+    .ambient-glow.listening {
+      opacity: 0.7;
+      background: radial-gradient(circle, rgba(0, 229, 255, 0.25) 0%, rgba(0, 229, 255, 0.05) 40%, transparent 70%);
+    }
+
+    .ambient-glow.speaking {
+      opacity: 0.65;
+      background: radial-gradient(circle, var(--green-glow) 0%, rgba(30, 255, 0, 0.08) 40%, transparent 70%);
+      animation: speakGlow 1s ease-in-out infinite alternate;
+    }
+
+    @keyframes speakGlow {
+      0% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; }
+      100% { transform: translate(-50%, -50%) scale(1.08); opacity: 0.7; }
+    }
+
+    .ambient-glow.thinking {
       opacity: 0.5;
-      animation: glowPulse 4s ease-in-out infinite;
+      background: radial-gradient(circle, rgba(255, 200, 0, 0.15) 0%, rgba(255, 200, 0, 0.03) 40%, transparent 70%);
+      animation: thinkPulse 1.5s ease-in-out infinite;
     }
 
-    @keyframes glowPulse {
-      0%, 100% { opacity: 0.4; transform: translate(-50%, -50%) scale(1); }
-      50% { opacity: 0.6; transform: translate(-50%, -50%) scale(1.05); }
+    @keyframes thinkPulse {
+      0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.4; }
+      50% { transform: translate(-50%, -50%) scale(1.04); opacity: 0.6; }
     }
-
-    /* ─── Navigate Button ─── */
-    .nav-section {
-      animation: fadeInUp 1.6s ease;
-    }
-
-    .nav-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      padding: 16px 32px;
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      background: var(--surface);
-      color: var(--text);
-      font-family: 'Outfit', sans-serif;
-      font-size: 1rem;
-      font-weight: 500;
-      cursor: pointer;
-      text-decoration: none;
-      transition: all 0.4s ease;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .nav-btn::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(135deg, rgba(30, 255, 0, 0.1), rgba(0, 229, 255, 0.1));
-      opacity: 0;
-      transition: opacity 0.4s ease;
-    }
-
-    .nav-btn:hover::before {
-      opacity: 1;
-    }
-
-    .nav-btn:hover {
-      border-color: var(--green);
-      box-shadow: 0 0 30px var(--green-glow), 0 8px 32px rgba(0, 0, 0, 0.3);
-      transform: translateY(-2px);
-    }
-
-    .nav-btn svg {
-      width: 20px;
-      height: 20px;
-      fill: var(--green);
-      transition: transform 0.3s ease;
-    }
-
-    .nav-btn:hover svg {
-      transform: translateX(4px);
-    }
-
-    /* ─── Corner decorations ─── */
-    .corner {
-      position: fixed;
-      width: 60px;
-      height: 60px;
-      border-color: rgba(30, 255, 0, 0.15);
-      border-style: solid;
-      z-index: 1;
-    }
-
-    .corner.tl { top: 20px; left: 20px; border-width: 2px 0 0 2px; }
-    .corner.tr { top: 20px; right: 20px; border-width: 2px 2px 0 0; }
-    .corner.bl { bottom: 20px; left: 20px; border-width: 0 0 2px 2px; }
-    .corner.br { bottom: 20px; right: 20px; border-width: 0 2px 2px 0; }
 
     /* ─── Responsive ─── */
-    @media (max-width: 600px) {
-      .title-section h1 { font-size: 2.2rem; }
-      .title-section p { font-size: 0.8rem; }
+    @media (max-width: 768px) {
+      .eye { width: 150px; height: 150px; }
+      .eyes { gap: 70px; }
+      .face { gap: 35px; }
+      .mouth { width: 50px; height: 16px; }
+      .ambient-glow { width: 450px; height: 450px; }
+    }
 
-      .eye { width: 120px; height: 120px; }
-      .eyes { gap: 60px; }
-      .face { gap: 28px; }
-      .mouth { width: 44px; height: 14px; }
-      .ambient-glow { width: 350px; height: 350px; }
-
-      .nav-btn { padding: 12px 24px; font-size: 0.9rem; }
+    @media (max-width: 480px) {
+      .eye { width: 110px; height: 110px; }
+      .eyes { gap: 50px; }
+      .face { gap: 24px; }
+      .mouth { width: 40px; height: 12px; }
+      .ambient-glow { width: 320px; height: 320px; }
     }
   </style>
 </head>
@@ -400,90 +257,91 @@
   <!-- Floating particles -->
   <div class="particles" id="particles"></div>
 
-  <!-- Corner decorations -->
-  <div class="corner tl"></div>
-  <div class="corner tr"></div>
-  <div class="corner bl"></div>
-  <div class="corner br"></div>
-
-  <!-- Main Content -->
-  <div class="main-content">
-
-    <!-- Title -->
-    <div class="title-section">
-      <h1>Penny</h1>
-      <p>AI Digital Counsellor</p>
-    </div>
-
-    <!-- Robot Face -->
-    <div class="robot-container">
-      <div class="face" id="robotFace">
-        <div class="eyes">
-          <div class="eye"></div>
-          <div class="eye"></div>
-        </div>
-        <div class="mouth" id="robotMouth"></div>
+  <!-- Robot Face -->
+  <div class="robot-container">
+    <div class="face" id="robotFace">
+      <div class="eyes">
+        <div class="eye"></div>
+        <div class="eye"></div>
       </div>
-      <div class="ambient-glow"></div>
+      <div class="mouth" id="robotMouth"></div>
     </div>
-
-    <!-- Status -->
-    <div class="status" id="statusText">online — ready to talk</div>
-
-    <!-- Navigate to Chat -->
-    <div class="nav-section">
-      <a href="chat.html" class="nav-btn" id="chatNavBtn">
-        <span>Start Conversation</span>
-        <svg viewBox="0 0 24 24">
-          <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" />
-        </svg>
-      </a>
-    </div>
-
+    <div class="ambient-glow" id="ambientGlow"></div>
   </div>
 
   <script>
-    // ─── Floating Particles ───
+    // ─── DOM ───
+    const face = document.getElementById('robotFace');
+    const mouth = document.getElementById('robotMouth');
+    const glow = document.getElementById('ambientGlow');
     const particlesContainer = document.getElementById('particles');
 
+    // ─── BroadcastChannel — listen for state from chat page ───
+    const channel = new BroadcastChannel('penny-state');
+
+    channel.onmessage = (event) => {
+      const { state } = event.data;
+
+      // Clear all states first
+      face.classList.remove('listening', 'happy');
+      mouth.classList.remove('talking');
+      glow.classList.remove('listening', 'speaking', 'thinking');
+
+      switch (state) {
+        case 'listening':
+          face.classList.add('listening');
+          glow.classList.add('listening');
+          break;
+
+        case 'thinking':
+          glow.classList.add('thinking');
+          break;
+
+        case 'speaking':
+          face.classList.add('happy');
+          mouth.classList.add('talking');
+          glow.classList.add('speaking');
+          break;
+
+        case 'idle':
+        default:
+          // All cleared above — back to default
+          break;
+      }
+    };
+
+    // ─── Floating Particles ───
     function createParticle() {
       const particle = document.createElement('div');
       particle.className = 'particle';
       particle.style.left = Math.random() * 100 + '%';
-      particle.style.animationDuration = (8 + Math.random() * 12) + 's';
+      particle.style.animationDuration = (10 + Math.random() * 15) + 's';
       particle.style.animationDelay = Math.random() * 5 + 's';
-      particle.style.width = (2 + Math.random() * 3) + 'px';
-      particle.style.height = particle.style.width;
+      const size = (2 + Math.random() * 2) + 'px';
+      particle.style.width = size;
+      particle.style.height = size;
       particle.style.opacity = 0;
 
-      // Random green/cyan tint
-      if (Math.random() > 0.6) {
+      if (Math.random() > 0.7) {
         particle.style.background = '#00e5ff';
       }
 
       particlesContainer.appendChild(particle);
-
-      // Remove after animation
-      setTimeout(() => {
-        particle.remove();
-      }, 20000);
+      setTimeout(() => particle.remove(), 25000);
     }
 
-    // Spawn particles periodically
-    setInterval(createParticle, 600);
-    // Initial burst
-    for (let i = 0; i < 15; i++) {
-      setTimeout(createParticle, i * 200);
+    setInterval(createParticle, 800);
+    for (let i = 0; i < 12; i++) {
+      setTimeout(createParticle, i * 250);
     }
 
     // ─── Subtle mouse-follow on eyes ───
-    const face = document.getElementById('robotFace');
     document.addEventListener('mousemove', (e) => {
       const cx = window.innerWidth / 2;
       const cy = window.innerHeight / 2;
       const dx = (e.clientX - cx) / cx;
       const dy = (e.clientY - cy) / cy;
-      face.style.transform = `translate(${dx * 6}px, ${dy * 4}px)`;
+      face.style.transform = `translate(${dx * 8}px, ${dy * 5}px)`;
     });
   </script>
 
