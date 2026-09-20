@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Penny — Chat & Voice</title>
+  <meta name="description"
+    content="Chat with Penny, your AI digital counsellor. Type or speak to get intelligent, caring responses.">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
+
+  <style>
+    *,
+    *::before,
+    *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --green: #1eff00;
+      --green-dim: #0a8a00;
+      --green-glow: rgba(30, 255, 0, 0.3);
+      --blue-glow: #29B6FF;
+      --bg: #000100;
+      --surface: rgba(30, 255, 0, 0.04);
+      --surface-hover: rgba(30, 255, 0, 0.08);
+      --border: rgba(30, 255, 0, 0.12);
+      --text: #c8ffc0;
+      --text-dim: rgba(200, 255, 192, 0.5);
+    }
+
+    body {
+      margin: 0;
+      height: 100vh;
+      background: var(--bg);
+      font-family: 'Outfit', sans-serif;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ─── Scanline overlay ─── */
+    body::after {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: repeating-linear-gradient(0deg,
+          transparent,
+          transparent 2px,
+          rgba(0, 0, 0, 0.08) 2px,
+          rgba(0, 0, 0, 0.08) 4px);
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /* ─── Grid Background ─── */
+    .grid-bg {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image:
+        linear-gradient(rgba(30, 255, 0, 0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(30, 255, 0, 0.02) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ─── Top Navigation Bar ─── */
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(0, 1, 0, 0.85);
+      backdrop-filter: blur(20px);
+      position: relative;
+      z-index: 10;
+      flex-shrink: 0;
+    }
+
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      color: var(--text);
+      font-family: 'Outfit', sans-serif;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.3s ease;
+    }
+
+    .back-btn:hover {
+      border-color: var(--green);
+      box-shadow: 0 0 16px var(--green-glow);
+      transform: translateX(-2px);
+    }
+
+    .back-btn svg {
+      width: 16px;
+      height: 16px;
+      fill: var(--green);
+      transition: transform 0.3s ease;
+    }
+
+    .back-btn:hover svg {
+      transform: translateX(-3px);
+    }
+
+    .top-bar-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      background: linear-gradient(135deg, var(--green), #00e5ff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: 0.02em;
+    }
+
+    .connection-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.75rem;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-dim);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .connection-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green-glow);
+      animation: dotPulse 2s ease-in-out infinite;
+    }
+
+    @keyframes dotPulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* ─── Chat Container ─── */
+    .chat-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      max-width: 800px;
+      width: 100%;
+      margin: 0 auto;
+      position: relative;
+      z-index: 1;
+      overflow: hidden;
+    }
+
+    /* ─── Status Bar ─── */
+    .status-bar {
+      padding: 12px 24px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .status {
+      font-size: 0.8rem;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-dim);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      min-height: 20px;
+      transition: color 0.3s ease, text-shadow 0.3s ease;
+    }
+
+    .status.active {
+      color: #00e5ff;
+      text-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
+    }
+
+    .status.speaking {
+      color: var(--green);
+      text-shadow: 0 0 10px var(--green-glow);
+    }
+
+    /* ─── Chat Messages ─── */
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      padding: 20px 24px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--green-dim) transparent;
+    }
+
+    .chat-messages::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .chat-messages::-webkit-scrollbar-thumb {
+      background: var(--green-dim);
+      border-radius: 4px;
+    }
+
+    /* ─── Welcome message ─── */
+    .welcome-message {
+      text-align: center;
+      padding: 40px 20px;
+      animation: fadeIn 0.8s ease;
+    }
+
+    .welcome-icon {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 16px;
+      border-radius: 50%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: glowPulse 3s ease-in-out infinite;
+    }
+
+    @keyframes glowPulse {
+      0%, 100% { box-shadow: 0 0 10px var(--green-glow); }
+      50% { box-shadow: 0 0 25px var(--green-glow); }
+    }
+
+    .welcome-icon svg {
+      width: 28px;
+      height: 28px;
+      fill: var(--green);
+    }
+
+    .welcome-message h2 {
+      font-size: 1.3rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+
+    .welcome-message p {
+      font-size: 0.88rem;
+      color: var(--text-dim);
+      line-height: 1.6;
+      max-width: 400px;
+      margin: 0 auto;
+    }
+
+    /* ─── Messages ─── */
+    .message {
+      padding: 14px 18px;
+      border-radius: 16px;
+      font-size: 0.92rem;
+      line-height: 1.7;
+      max-width: 80%;
+      animation: fadeIn 0.35s ease;
+      word-wrap: break-word;
+      position: relative;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .message.user {
+      align-self: flex-end;
+      background: rgba(0, 229, 255, 0.08);
+      border: 1px solid rgba(0, 229, 255, 0.18);
+      color: #b0f0ff;
+      border-radius: 16px 16px 4px 16px;
+    }
+
+    .message.bot {
+      align-self: flex-start;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 16px 16px 16px 4px;
+    }
+
+    .message .label {
+      font-size: 0.68rem;
+      font-family: 'JetBrains Mono', monospace;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-bottom: 6px;
+      opacity: 0.45;
+    }
+
+    .message .timestamp {
+      font-size: 0.62rem;
+      font-family: 'JetBrains Mono', monospace;
+      opacity: 0.3;
+      margin-top: 6px;
+      text-align: right;
+    }
+
+    .message.bot .typing-dots::after {
+      content: '';
+      animation: dots 1.4s infinite;
+    }
+
+    @keyframes dots {
+      0%, 20% { content: '.'; }
+      40% { content: '..'; }
+      60%, 100% { content: '...'; }
+    }
+
+    /* ─── Controls ─── */
+    .controls-section {
+      padding: 16px 24px 24px;
+      border-top: 1px solid var(--border);
+      background: rgba(0, 1, 0, 0.6);
+      backdrop-filter: blur(16px);
+      flex-shrink: 0;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .mic-btn {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      border: 2px solid var(--green-dim);
+      background: var(--surface);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s ease;
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .mic-btn:hover {
+      background: var(--surface-hover);
+      border-color: var(--green);
+      box-shadow: 0 0 24px var(--green-glow);
+    }
+
+    .mic-btn.recording {
+      border-color: #ff4444;
+      background: rgba(255, 68, 68, 0.1);
+      box-shadow: 0 0 30px rgba(255, 68, 68, 0.3);
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 15px rgba(255, 68, 68, 0.2); }
+      50% { box-shadow: 0 0 35px rgba(255, 68, 68, 0.5); }
+    }
+
+    .mic-btn svg {
+      width: 24px;
+      height: 24px;
+      fill: var(--green);
+      transition: fill 0.3s ease;
+    }
+
+    .mic-btn.recording svg {
+      fill: #ff4444;
+    }
+
+    /* Mic ripple effect when recording */
+    .mic-btn.recording::before {
+      content: '';
+      position: absolute;
+      inset: -6px;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 68, 68, 0.3);
+      animation: ripple 1.5s infinite;
+    }
+
+    @keyframes ripple {
+      0% { transform: scale(1); opacity: 1; }
+      100% { transform: scale(1.5); opacity: 0; }
+    }
+
+    .text-input-wrapper {
+      flex: 1;
+      position: relative;
+    }
+
+    .text-input {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px 52px 14px 18px;
+      color: var(--text);
+      font-family: 'Outfit', sans-serif;
+      font-size: 0.92rem;
+      outline: none;
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .text-input:focus {
+      border-color: var(--green);
+      box-shadow: 0 0 16px var(--green-glow);
+    }
+
+    .text-input::placeholder {
+      color: var(--text-dim);
+    }
+
+    .send-btn {
+      position: absolute;
+      right: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s ease;
+    }
+
+    .send-btn:hover {
+      background: var(--surface-hover);
+    }
+
+    .send-btn svg {
+      width: 18px;
+      height: 18px;
+      fill: var(--green);
+      transition: transform 0.3s ease;
+    }
+
+    .send-btn:hover svg {
+      transform: translateX(2px);
+    }
+
+    /* ─── Voice visualizer ─── */
+    .voice-visualizer {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      height: 24px;
+      margin-top: 8px;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .voice-visualizer.active {
+      opacity: 1;
+    }
+
+    .voice-bar {
+      width: 3px;
+      height: 4px;
+      background: var(--green);
+      border-radius: 2px;
+      transition: height 0.1s ease;
+    }
+
+    .voice-visualizer.listening .voice-bar {
+      background: #00e5ff;
+      animation: barBounce 0.4s ease infinite alternate;
+    }
+
+    .voice-bar:nth-child(1) { animation-delay: 0s; }
+    .voice-bar:nth-child(2) { animation-delay: 0.05s; }
+    .voice-bar:nth-child(3) { animation-delay: 0.1s; }
+    .voice-bar:nth-child(4) { animation-delay: 0.15s; }
+    .voice-bar:nth-child(5) { animation-delay: 0.2s; }
+    .voice-bar:nth-child(6) { animation-delay: 0.15s; }
+    .voice-bar:nth-child(7) { animation-delay: 0.1s; }
+    .voice-bar:nth-child(8) { animation-delay: 0.05s; }
+    .voice-bar:nth-child(9) { animation-delay: 0s; }
+
+    @keyframes barBounce {
+      0% { height: 4px; }
+      100% { height: 22px; }
+    }
+
+    /* ─── Responsive ─── */
+    @media (max-width: 600px) {
+      .top-bar {
+        padding: 12px 16px;
+      }
+
+      .top-bar-title {
+        font-size: 0.95rem;
+      }
+
+      .chat-messages {
+        padding: 16px;
+        gap: 10px;
+      }
+
+      .message {
+        max-width: 90%;
+        padding: 12px 14px;
+      }
+
+      .controls-section {
+        padding: 12px 16px 20px;
+      }
+
+      .mic-btn {
+        width: 48px;
+        height: 48px;
+      }
+
+      .text-input {
+        padding: 12px 48px 12px 14px;
+        font-size: 0.88rem;
+      }
+
+      .welcome-message {
+        padding: 24px 16px;
+      }
+
+      .connection-indicator span {
+        display: none;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Grid background -->
+  <div class="grid-bg"></div>
+
+  <!-- Top Navigation -->
+  <div class="top-bar">
+    <a href="index.html" class="back-btn" id="backBtn">
+      <svg viewBox="0 0 24 24">
+        <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
+      </svg>
+      <span>Penny</span>
+    </a>
+    <span class="top-bar-title">Chat & Voice</span>
+    <div class="connection-indicator">
+      <div class="connection-dot"></div>
+      <span>Connected</span>
+    </div>
+  </div>
+
+  <!-- Chat Container -->
+  <div class="chat-container">
+
+    <!-- Status -->
+    <div class="status-bar">
+      <div class="status" id="statusText">tap the mic or type to talk</div>
+    </div>
+
+    <!-- Messages -->
+    <div class="chat-messages" id="chatMessages">
+      <div class="welcome-message" id="welcomeMessage">
+        <div class="welcome-icon">
+          <svg viewBox="0 0 24 24">
+            <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" />
+          </svg>
+        </div>
+        <h2>Hello, I'm Penny</h2>
+        <p>Your AI digital counsellor. Ask me anything — type below or tap the microphone to speak.</p>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls-section">
+      <div class="controls">
+        <button class="mic-btn" id="micBtn" title="Hold to speak">
+          <svg viewBox="0 0 24 24">
+            <path
+              d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5z" />
+            <path
+              d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+          </svg>
+        </button>
+        <div class="text-input-wrapper">
+          <input type="text" class="text-input" id="textInput" placeholder="Type your message..."
+            autocomplete="off">
+          <button class="send-btn" id="sendBtn" title="Send message">
+            <svg viewBox="0 0 24 24">
+              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <!-- Voice visualizer -->
+      <div class="voice-visualizer" id="voiceVisualizer">
+        <div class="voice-bar"></div>
+        <div class="voice-bar"></div>
+        <div class="voice-bar"></div>
+        <div class="voice-bar"></div>
+        <div class="voice-bar"></div>
+        <div class="voice-bar"></div>
+        <div class="voice-bar"></div>
+        <div class="voice-bar"></div>
+        <div class="voice-bar"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ─── Config ───
+    const OLLAMA_URL = 'http://localhost:11434/api/chat';
+    const MODEL = 'gemma4:e2b';
+
+    // ─── DOM ───
+    const statusText = document.getElementById('statusText');
+    const chatMessages = document.getElementById('chatMessages');
+    const welcomeMessage = document.getElementById('welcomeMessage');
+    const micBtn = document.getElementById('micBtn');
+    const textInput = document.getElementById('textInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const voiceVisualizer = document.getElementById('voiceVisualizer');
+
+    // ─── State ───
+    let isListening = false;
+    let isSpeaking = false;
+    let isProcessing = false;
+    let recognition = null;
+    let hasFirstMessage = false;
+
+    // ─── Speech Recognition Setup ───
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (SpeechRecognition) {
+      recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        isListening = true;
+        micBtn.classList.add('recording');
+        voiceVisualizer.classList.add('active', 'listening');
+        setStatus('listening...', 'active');
+      };
+
+      recognition.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+
+        if (event.results[event.results.length - 1].isFinal) {
+          stopListening();
+          if (transcript.trim()) {
+            handleUserMessage(transcript.trim());
+          }
+        } else {
+          setStatus(`hearing: "${transcript}"`, 'active');
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.error('Speech error:', event.error);
+        stopListening();
+        if (event.error === 'no-speech') {
+          setStatus("i didn't hear anything — try again", '');
+        } else if (event.error === 'not-allowed') {
+          setStatus('microphone access denied', '');
+        } else {
+          setStatus('speech error — try again', '');
+        }
+      };
+
+      recognition.onend = () => {
+        stopListening();
+      };
+    }
+
+    // ─── Mic Button ───
+    micBtn.addEventListener('click', () => {
+      if (isProcessing || isSpeaking) return;
+
+      if (isListening) {
+        recognition.stop();
+      } else {
+        startListening();
+      }
+    });
+
+    // ─── Text Input ───
+    textInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendTextMessage();
+      }
+    });
+
+    sendBtn.addEventListener('click', sendTextMessage);
+
+    function sendTextMessage() {
+      const text = textInput.value.trim();
+      if (!text || isProcessing || isSpeaking) return;
+      textInput.value = '';
+      handleUserMessage(text);
+    }
+
+    // ─── Listening Controls ───
+    function startListening() {
+      if (!recognition) {
+        setStatus('speech recognition not supported in this browser', '');
+        return;
+      }
+      // Stop any ongoing speech
+      synthesis.cancel();
+      isSpeaking = false;
+
+      try {
+        recognition.start();
+      } catch (e) {
+        console.error('Could not start recognition:', e);
+      }
+    }
+
+    function stopListening() {
+      isListening = false;
+      micBtn.classList.remove('recording');
+      voiceVisualizer.classList.remove('active', 'listening');
+    }
+
+    // ─── Handle User Message ───
+    async function handleUserMessage(text) {
+      // Remove welcome message on first interaction
+      if (!hasFirstMessage && welcomeMessage) {
+        welcomeMessage.style.animation = 'fadeOut 0.3s ease forwards';
+        setTimeout(() => welcomeMessage.remove(), 300);
+        hasFirstMessage = true;
+      }
+
+      addMessage(text, 'user');
+      setStatus('thinking...', 'active');
+      isProcessing = true;
+
+      // Add "thinking" bubble
+      const thinkingEl = addMessage('', 'bot', true);
+
+      try {
+        const response = await queryOllama(text);
+        thinkingEl.remove();
+        addMessage(response, 'bot');
+        isProcessing = false;
+        speakResponse(response);
+      } catch (err) {
+        thinkingEl.remove();
+        isProcessing = false;
+        const errorMsg = err.message.includes('Failed to fetch')
+          ? 'Cannot reach Ollama. Make sure it\'s running on localhost:11434'
+          : 'Something went wrong: ' + err.message;
+        addMessage(errorMsg, 'bot');
+        setStatus('error — check ollama', '');
+      }
+    }
+
+    // ─── Ollama API ───
+    async function queryOllama(prompt) {
+      const systemPrompt = `You are Penny, a friendly and concise AI assistant. Keep responses short (2-3 sentences max) and conversational. Be warm and helpful. Do not use markdown formatting, emojis, or special characters. Speak naturally as if in a real conversation.
+
+CRITICAL LANGUAGE RULE: When the user writes in Nepali (even in Roman script), you MUST reply ONLY in Devanagari script. NEVER write romanized Nepali.
+
+Examples:
+User: timro nam k ho → Reply: मेरो नाम पेनी हो। म एउटा मित्रवत AI सहायक हुँ।
+User: kasto cha → Reply: म ठिक छु, धन्यवाद! तिमीलाई कसरी मद्दत गर्न सक्छु?
+User: mero sathi lai advice deu → Reply: तिम्रो साथीलाई भन्नु, सधैं आफ्नो मनको कुरा खुलेर राख्नु पर्छ।
+
+NEVER write like this: "Mero naam Penny ho" — this is WRONG.
+ALWAYS write like this: "मेरो नाम पेनी हो" — this is CORRECT.`;
+
+      const res = await fetch(OLLAMA_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: MODEL,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: prompt }
+          ],
+          think: false,
+          stream: false,
+          options: {
+            temperature: 0.7,
+            num_predict: 256
+          }
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error(`Ollama returned ${res.status}`);
+      }
+
+      const data = await res.json();
+      let response = (data.message && data.message.content) || 'I didn\'t quite get that.';
+      response = response.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+      response = response.replace(/<[^>]+>/g, '').trim();
+      response = response.replace(/\s+/g, ' ').trim();
+      return response || 'I didn\'t quite get that.';
+    }
+
+    // ─── Text to Speech (Hybrid: Browser native for EN, Edge TTS for Nepali) ───
+    const synthesis = window.speechSynthesis;
+
+    function hasNepali(text) {
+      if (/[\u0900-\u097F]/.test(text)) return true;
+      const lower = text.toLowerCase();
+      const nepaliWords = ['mero', 'timro', 'naam', 'kasto', 'cha', 'chha', 'haina',
+        'huncha', 'gardai', 'garna', 'bhayo', 'garnu', 'malai', 'timilai',
+        'tapailai', 'hajur', 'dhanyabad', 'namaste', 'namaskar', 'ramro',
+        'ho', 'hoina', 'ke', 'kina', 'kata', 'kahile', 'kasari', 'ko',
+        'lai', 'sathi', 'didi', 'bhai', 'daju', 'bahini', 'ama', 'baba',
+        'paisa', 'rupiya', 'nepal', 'nepali', 'hola', 'parcha', 'bhannu',
+        'aaja', 'bholi', 'hijo', 'dinchu', 'khana', 'pani', 'ghar'];
+      const words = lower.split(/\s+/);
+      const matches = words.filter(w => nepaliWords.includes(w.replace(/[.,!?]/g, '')));
+      return matches.length >= 2;
+    }
+
+    function speakResponse(text) {
+      voiceVisualizer.classList.add('active');
+      voiceVisualizer.classList.remove('listening');
+      if (hasNepali(text)) {
+        speakWithEdgeTTS(text);
+      } else {
+        speakWithBrowser(text);
+      }
+    }
+
+    function speakWithBrowser(text) {
+      synthesis.cancel();
+      isSpeaking = true;
+      setStatus('speaking...', 'speaking');
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+
+      const voices = synthesis.getVoices();
+      const preferred = voices.find(v => v.name.includes('Google') && v.lang.startsWith('en'))
+        || voices.find(v => v.lang.startsWith('en-US'))
+        || voices.find(v => v.lang.startsWith('en'));
+      if (preferred) utterance.voice = preferred;
+
+      utterance.onend = () => stopSpeaking();
+      utterance.onerror = () => stopSpeaking();
+      synthesis.speak(utterance);
+    }
+
+    let currentAudio = null;
+    async function speakWithEdgeTTS(text) {
+      if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+
+      isSpeaking = true;
+      setStatus('speaking (nepali)...', 'speaking');
+
+      try {
+        const lang = hasNepali(text) ? 'ne' : 'en';
+        const res = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, lang })
+        });
+        if (!res.ok) throw new Error('TTS failed');
+
+        const audioBlob = await res.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        currentAudio = audio;
+
+        audio.onended = () => { stopSpeaking(); URL.revokeObjectURL(audioUrl); currentAudio = null; };
+        audio.onerror = () => { stopSpeaking(); URL.revokeObjectURL(audioUrl); currentAudio = null; };
+        await audio.play();
+      } catch (err) {
+        console.error('Edge TTS error:', err);
+        speakWithBrowser(text);
+      }
+    }
+
+    function stopSpeaking() {
+      isSpeaking = false;
+      voiceVisualizer.classList.remove('active');
+      setStatus('tap the mic or type to talk', '');
+    }
+
+    synthesis.onvoiceschanged = () => synthesis.getVoices();
+
+    // ─── Chat UI ───
+    function addMessage(text, sender, isThinking = false) {
+      const msg = document.createElement('div');
+      msg.className = `message ${sender}`;
+
+      const label = document.createElement('div');
+      label.className = 'label';
+      label.textContent = sender === 'user' ? 'You' : 'Penny';
+      msg.appendChild(label);
+
+      const content = document.createElement('div');
+      if (isThinking) {
+        content.className = 'typing-dots';
+        content.textContent = '...';
+      } else {
+        content.textContent = text;
+      }
+      msg.appendChild(content);
+
+      // Timestamp
+      if (!isThinking) {
+        const ts = document.createElement('div');
+        ts.className = 'timestamp';
+        ts.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        msg.appendChild(ts);
+      }
+
+      chatMessages.appendChild(msg);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+
+      return msg;
+    }
+
+    function setStatus(text, type) {
+      statusText.textContent = text;
+      statusText.className = 'status' + (type ? ` ${type}` : '');
+    }
+
+    // ─── Focus input on page load ───
+    textInput.focus();
+
+    // ─── Fade out animation for welcome ───
+    const fadeOutStyle = document.createElement('style');
+    fadeOutStyle.textContent = `
+      @keyframes fadeOut {
+        from { opacity: 1; transform: translateY(0); }
+        to { opacity: 0; transform: translateY(-10px); }
+      }
+    `;
+    document.head.appendChild(fadeOutStyle);
+  </script>
+
+</body>
+
+</html>

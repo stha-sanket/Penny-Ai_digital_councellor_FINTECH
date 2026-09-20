@@ -36,6 +36,11 @@ def index():
     return send_from_directory('.', 'index.html')
 
 
+@app.route('/chat.html')
+def chat():
+    return send_from_directory('.', 'chat.html')
+
+
 @app.route('/api/tts', methods=['POST'])
 def tts():
     data = request.get_json()

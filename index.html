@@ -4,9 +4,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Penny — AI Voice Assistant</title>
+  <title>Penny — AI Digital Counsellor</title>
   <meta name="description"
-    content="Penny is your AI digital counsellor. Speak to Penny and get intelligent responses powered by local LLM.">
+    content="Penny is your AI digital counsellor. Meet Penny face-to-face and navigate to the chat to start a conversation.">
   <link
     href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
     rel="stylesheet">
@@ -42,7 +42,9 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      overflow-x: hidden;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
     }
 
     /* ─── Scanline overlay ─── */
@@ -62,35 +64,147 @@
       z-index: 9999;
     }
 
+    /* ─── Floating particles ─── */
+    .particles {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .particle {
+      position: absolute;
+      width: 3px;
+      height: 3px;
+      background: var(--green);
+      border-radius: 50%;
+      opacity: 0;
+      animation: floatUp linear infinite;
+    }
+
+    @keyframes floatUp {
+      0% {
+        opacity: 0;
+        transform: translateY(100vh) scale(0.5);
+      }
+
+      10% {
+        opacity: 0.6;
+      }
+
+      90% {
+        opacity: 0.3;
+      }
+
+      100% {
+        opacity: 0;
+        transform: translateY(-10vh) scale(1.2);
+      }
+    }
+
+    /* ─── Grid Background ─── */
+    .grid-bg {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image:
+        linear-gradient(rgba(30, 255, 0, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(30, 255, 0, 0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ─── Main Content ─── */
+    .main-content {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 40px;
+    }
+
+    /* ─── Title ─── */
+    .title-section {
+      text-align: center;
+      animation: fadeInDown 1s ease;
+    }
+
+    .title-section h1 {
+      font-size: 3.5rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, var(--green) 0%, #00e5ff 50%, var(--green) 100%);
+      background-size: 200% 200%;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: gradientShift 4s ease infinite;
+    }
+
+    .title-section p {
+      margin-top: 8px;
+      font-size: 1rem;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-dim);
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+    }
+
+    @keyframes gradientShift {
+      0%, 100% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+    }
+
+    @keyframes fadeInDown {
+      from { opacity: 0; transform: translateY(-30px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
     /* ─── Robot Face ─── */
     .robot-container {
-      margin-top: 40px;
       display: flex;
       flex-direction: column;
       align-items: center;
       position: relative;
+      animation: fadeInUp 1.2s ease;
+    }
+
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(30px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     .face {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 30px;
+      gap: 40px;
       transition: transform 0.3s ease;
     }
 
+    .face:hover {
+      transform: scale(1.03);
+    }
+
     .face.listening {
-      transform: scale(1.02);
+      transform: scale(1.05);
     }
 
     .eyes {
       display: flex;
-      gap: 80px;
+      gap: 100px;
     }
 
     .eye {
-      width: 140px;
-      height: 140px;
+      width: 180px;
+      height: 180px;
       background: var(--green);
       clip-path: polygon(35% 0%, 65% 0%, 65% 5%, 75% 5%, 75% 10%, 85% 10%, 85% 15%, 90% 15%,
           90% 25%, 95% 25%, 95% 35%, 100% 35%, 100% 65%, 95% 65%, 95% 75%,
@@ -98,15 +212,19 @@
           65% 100%, 35% 100%, 35% 95%, 25% 95%, 25% 90%, 15% 90%, 15% 85%,
           10% 85%, 10% 75%, 5% 75%, 5% 65%, 0% 65%, 0% 35%, 5% 35%, 5% 25%,
           10% 25%, 10% 15%, 15% 15%, 15% 10%, 25% 10%, 25% 5%, 35% 5%);
-      filter: drop-shadow(0 0 18px var(--blue-glow));
+      filter: drop-shadow(0 0 24px var(--blue-glow));
       animation: blink 4s infinite;
       transform-origin: center;
-      transition: background 0.3s ease;
+      transition: background 0.3s ease, filter 0.3s ease;
+    }
+
+    .eye:hover {
+      filter: drop-shadow(0 0 40px var(--green-glow));
     }
 
     .face.listening .eye {
       background: #00e5ff;
-      filter: drop-shadow(0 0 24px rgba(0, 229, 255, 0.6));
+      filter: drop-shadow(0 0 30px rgba(0, 229, 255, 0.6));
     }
 
     .face.happy .eye {
@@ -117,26 +235,17 @@
     }
 
     @keyframes blink {
-
-      0%,
-      90%,
-      100% {
-        transform: scaleY(1);
-      }
-
-      93%,
-      97% {
-        transform: scaleY(0.06);
-      }
+      0%, 90%, 100% { transform: scaleY(1); }
+      93%, 97% { transform: scaleY(0.06); }
     }
 
     .mouth {
-      width: 50px;
-      height: 16px;
+      width: 60px;
+      height: 20px;
       background: var(--green);
       clip-path: polygon(0% 0%, 100% 0%, 100% 50%, 75% 50%,
           75% 100%, 25% 100%, 25% 50%, 0% 50%);
-      filter: drop-shadow(0 0 12px var(--blue-glow));
+      filter: drop-shadow(0 0 16px var(--blue-glow));
       transition: all 0.1s ease;
     }
 
@@ -145,37 +254,27 @@
     }
 
     @keyframes talk {
-      0% {
-        height: 10px;
-        width: 40px;
-      }
-
-      50% {
-        height: 28px;
-        width: 55px;
-      }
-
-      100% {
-        height: 20px;
-        width: 48px;
-      }
+      0% { height: 12px; width: 48px; }
+      50% { height: 34px; width: 65px; }
+      100% { height: 24px; width: 56px; }
     }
 
     .face.listening .mouth {
       background: #00e5ff;
-      filter: drop-shadow(0 0 16px rgba(0, 229, 255, 0.5));
+      filter: drop-shadow(0 0 20px rgba(0, 229, 255, 0.5));
     }
 
-    /* ─── Status Indicator ─── */
+    /* ─── Status ─── */
     .status {
-      margin-top: 20px;
-      font-size: 0.85rem;
+      margin-top: 24px;
+      font-size: 0.9rem;
       font-family: 'JetBrains Mono', monospace;
       color: var(--text-dim);
-      letter-spacing: 0.08em;
+      letter-spacing: 0.1em;
       text-transform: uppercase;
-      min-height: 20px;
+      min-height: 24px;
       transition: color 0.3s ease;
+      animation: fadeInUp 1.4s ease;
     }
 
     .status.active {
@@ -188,625 +287,204 @@
       text-shadow: 0 0 10px var(--green-glow);
     }
 
-    /* ─── Chat Area ─── */
-    .chat-section {
-      width: 100%;
-      max-width: 680px;
-      padding: 0 20px;
-      margin-top: 30px;
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .chat-messages {
-      flex: 1;
-      max-height: 300px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      padding: 16px 0;
-      scrollbar-width: thin;
-      scrollbar-color: var(--green-dim) transparent;
-    }
-
-    .chat-messages::-webkit-scrollbar {
-      width: 4px;
-    }
-
-    .chat-messages::-webkit-scrollbar-thumb {
-      background: var(--green-dim);
-      border-radius: 4px;
-    }
-
-    .message {
-      padding: 12px 16px;
-      border-radius: 12px;
-      font-size: 0.92rem;
-      line-height: 1.6;
-      max-width: 85%;
-      animation: fadeIn 0.35s ease;
-      word-wrap: break-word;
-    }
-
-    @keyframes fadeIn {
-      from {
-        opacity: 0;
-        transform: translateY(8px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    .message.user {
-      align-self: flex-end;
-      background: rgba(0, 229, 255, 0.1);
-      border: 1px solid rgba(0, 229, 255, 0.2);
-      color: #b0f0ff;
-      border-radius: 12px 12px 4px 12px;
-    }
-
-    .message.bot {
-      align-self: flex-start;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      color: var(--text);
-      border-radius: 12px 12px 12px 4px;
-    }
-
-    .message .label {
-      font-size: 0.7rem;
-      font-family: 'JetBrains Mono', monospace;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      margin-bottom: 4px;
-      opacity: 0.5;
-    }
-
-    .message.bot .typing-dots::after {
-      content: '';
-      animation: dots 1.4s infinite;
-    }
-
-    @keyframes dots {
-
-      0%,
-      20% {
-        content: '.';
-      }
-
-      40% {
-        content: '..';
-      }
-
-      60%,
-      100% {
-        content: '...';
-      }
-    }
-
-    /* ─── Controls ─── */
-    .controls {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 20px 0 30px;
-    }
-
-    .mic-btn {
-      width: 60px;
-      height: 60px;
-      border-radius: 50%;
-      border: 2px solid var(--green-dim);
-      background: var(--surface);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.3s ease;
-      position: relative;
-      flex-shrink: 0;
-    }
-
-    .mic-btn:hover {
-      background: var(--surface-hover);
-      border-color: var(--green);
-      box-shadow: 0 0 20px var(--green-glow);
-    }
-
-    .mic-btn.recording {
-      border-color: #ff4444;
-      background: rgba(255, 68, 68, 0.1);
-      box-shadow: 0 0 25px rgba(255, 68, 68, 0.3);
-      animation: pulse 1.5s infinite;
-    }
-
-    @keyframes pulse {
-
-      0%,
-      100% {
-        box-shadow: 0 0 15px rgba(255, 68, 68, 0.2);
-      }
-
-      50% {
-        box-shadow: 0 0 30px rgba(255, 68, 68, 0.5);
-      }
-    }
-
-    .mic-btn svg {
-      width: 24px;
-      height: 24px;
-      fill: var(--green);
-      transition: fill 0.3s ease;
-    }
-
-    .mic-btn.recording svg {
-      fill: #ff4444;
-    }
-
-    .text-input {
-      flex: 1;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 14px 16px;
-      color: var(--text);
-      font-family: 'Outfit', sans-serif;
-      font-size: 0.92rem;
-      outline: none;
-      transition: border-color 0.3s ease, box-shadow 0.3s ease;
-    }
-
-    .text-input:focus {
-      border-color: var(--green);
-      box-shadow: 0 0 12px var(--green-glow);
-    }
-
-    .text-input::placeholder {
-      color: var(--text-dim);
-    }
-
-    .send-btn {
-      width: 44px;
-      height: 44px;
-      border-radius: 10px;
-      border: 1px solid var(--border);
-      background: var(--surface);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.3s ease;
-      flex-shrink: 0;
-    }
-
-    .send-btn:hover {
-      background: var(--surface-hover);
-      border-color: var(--green);
-      box-shadow: 0 0 12px var(--green-glow);
-    }
-
-    .send-btn svg {
-      width: 18px;
-      height: 18px;
-      fill: var(--green);
-    }
-
-    /* ─── Ambient glow behind face ─── */
+    /* ─── Ambient glow ─── */
     .ambient-glow {
       position: absolute;
-      width: 400px;
-      height: 400px;
-      background: radial-gradient(circle, var(--green-glow) 0%, transparent 70%);
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, var(--green-glow) 0%, rgba(30, 255, 0, 0.05) 40%, transparent 70%);
       border-radius: 50%;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
       pointer-events: none;
-      opacity: 0.4;
-      transition: opacity 0.5s ease;
+      opacity: 0.5;
+      animation: glowPulse 4s ease-in-out infinite;
     }
 
-    .face.listening~.ambient-glow,
-    .robot-container:has(.face.listening) .ambient-glow {
-      opacity: 0.7;
-      background: radial-gradient(circle, rgba(0, 229, 255, 0.2) 0%, transparent 70%);
+    @keyframes glowPulse {
+      0%, 100% { opacity: 0.4; transform: translate(-50%, -50%) scale(1); }
+      50% { opacity: 0.6; transform: translate(-50%, -50%) scale(1.05); }
     }
+
+    /* ─── Navigate Button ─── */
+    .nav-section {
+      animation: fadeInUp 1.6s ease;
+    }
+
+    .nav-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 16px 32px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--surface);
+      color: var(--text);
+      font-family: 'Outfit', sans-serif;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.4s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .nav-btn::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(30, 255, 0, 0.1), rgba(0, 229, 255, 0.1));
+      opacity: 0;
+      transition: opacity 0.4s ease;
+    }
+
+    .nav-btn:hover::before {
+      opacity: 1;
+    }
+
+    .nav-btn:hover {
+      border-color: var(--green);
+      box-shadow: 0 0 30px var(--green-glow), 0 8px 32px rgba(0, 0, 0, 0.3);
+      transform: translateY(-2px);
+    }
+
+    .nav-btn svg {
+      width: 20px;
+      height: 20px;
+      fill: var(--green);
+      transition: transform 0.3s ease;
+    }
+
+    .nav-btn:hover svg {
+      transform: translateX(4px);
+    }
+
+    /* ─── Corner decorations ─── */
+    .corner {
+      position: fixed;
+      width: 60px;
+      height: 60px;
+      border-color: rgba(30, 255, 0, 0.15);
+      border-style: solid;
+      z-index: 1;
+    }
+
+    .corner.tl { top: 20px; left: 20px; border-width: 2px 0 0 2px; }
+    .corner.tr { top: 20px; right: 20px; border-width: 2px 2px 0 0; }
+    .corner.bl { bottom: 20px; left: 20px; border-width: 0 0 2px 2px; }
+    .corner.br { bottom: 20px; right: 20px; border-width: 0 2px 2px 0; }
 
     /* ─── Responsive ─── */
     @media (max-width: 600px) {
-      .eye {
-        width: 100px;
-        height: 100px;
-      }
+      .title-section h1 { font-size: 2.2rem; }
+      .title-section p { font-size: 0.8rem; }
 
-      .eyes {
-        gap: 50px;
-      }
+      .eye { width: 120px; height: 120px; }
+      .eyes { gap: 60px; }
+      .face { gap: 28px; }
+      .mouth { width: 44px; height: 14px; }
+      .ambient-glow { width: 350px; height: 350px; }
 
-      .face {
-        gap: 20px;
-      }
-
-      .mouth {
-        width: 36px;
-        height: 12px;
-      }
-
-      .chat-messages {
-        max-height: 220px;
-      }
+      .nav-btn { padding: 12px 24px; font-size: 0.9rem; }
     }
   </style>
 </head>
 
 <body>
 
-  <!-- Robot Face -->
-  <div class="robot-container">
-    <div class="face" id="robotFace">
-      <div class="eyes">
-        <div class="eye"></div>
-        <div class="eye"></div>
+  <!-- Grid background -->
+  <div class="grid-bg"></div>
+
+  <!-- Floating particles -->
+  <div class="particles" id="particles"></div>
+
+  <!-- Corner decorations -->
+  <div class="corner tl"></div>
+  <div class="corner tr"></div>
+  <div class="corner bl"></div>
+  <div class="corner br"></div>
+
+  <!-- Main Content -->
+  <div class="main-content">
+
+    <!-- Title -->
+    <div class="title-section">
+      <h1>Penny</h1>
+      <p>AI Digital Counsellor</p>
+    </div>
+
+    <!-- Robot Face -->
+    <div class="robot-container">
+      <div class="face" id="robotFace">
+        <div class="eyes">
+          <div class="eye"></div>
+          <div class="eye"></div>
+        </div>
+        <div class="mouth" id="robotMouth"></div>
       </div>
-      <div class="mouth" id="robotMouth"></div>
+      <div class="ambient-glow"></div>
     </div>
-    <div class="ambient-glow"></div>
-  </div>
 
-  <!-- Status -->
-  <div class="status" id="statusText">tap the mic or type to talk</div>
+    <!-- Status -->
+    <div class="status" id="statusText">online — ready to talk</div>
 
-  <!-- Chat Messages -->
-  <div class="chat-section">
-    <div class="chat-messages" id="chatMessages"></div>
-
-    <!-- Controls -->
-    <div class="controls">
-      <button class="mic-btn" id="micBtn" title="Hold to speak">
+    <!-- Navigate to Chat -->
+    <div class="nav-section">
+      <a href="chat.html" class="nav-btn" id="chatNavBtn">
+        <span>Start Conversation</span>
         <svg viewBox="0 0 24 24">
-          <path
-            d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5z" />
-          <path
-            d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+          <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" />
         </svg>
-      </button>
-      <input type="text" class="text-input" id="textInput" placeholder="Or type your message here..."
-        autocomplete="off">
-      <button class="send-btn" id="sendBtn" title="Send message">
-        <svg viewBox="0 0 24 24">
-          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-        </svg>
-      </button>
+      </a>
     </div>
+
   </div>
 
   <script>
-    // ─── Config ───
-    const OLLAMA_URL = 'http://localhost:11434/api/chat';
-    const MODEL = 'gemma4:e2b';
+    // ─── Floating Particles ───
+    const particlesContainer = document.getElementById('particles');
 
-    // ─── DOM ───
+    function createParticle() {
+      const particle = document.createElement('div');
+      particle.className = 'particle';
+      particle.style.left = Math.random() * 100 + '%';
+      particle.style.animationDuration = (8 + Math.random() * 12) + 's';
+      particle.style.animationDelay = Math.random() * 5 + 's';
+      particle.style.width = (2 + Math.random() * 3) + 'px';
+      particle.style.height = particle.style.width;
+      particle.style.opacity = 0;
+
+      // Random green/cyan tint
+      if (Math.random() > 0.6) {
+        particle.style.background = '#00e5ff';
+      }
+
+      particlesContainer.appendChild(particle);
+
+      // Remove after animation
+      setTimeout(() => {
+        particle.remove();
+      }, 20000);
+    }
+
+    // Spawn particles periodically
+    setInterval(createParticle, 600);
+    // Initial burst
+    for (let i = 0; i < 15; i++) {
+      setTimeout(createParticle, i * 200);
+    }
+
+    // ─── Subtle mouse-follow on eyes ───
     const face = document.getElementById('robotFace');
-    const mouth = document.getElementById('robotMouth');
-    const statusText = document.getElementById('statusText');
-    const chatMessages = document.getElementById('chatMessages');
-    const micBtn = document.getElementById('micBtn');
-    const textInput = document.getElementById('textInput');
-    const sendBtn = document.getElementById('sendBtn');
-
-    // ─── State ───
-    let isListening = false;
-    let isSpeaking = false;
-    let isProcessing = false;
-    let recognition = null;
-
-    // ─── Speech Recognition Setup ───
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-    if (SpeechRecognition) {
-      recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      recognition.lang = 'en-US';
-
-      recognition.onstart = () => {
-        isListening = true;
-        face.classList.add('listening');
-        micBtn.classList.add('recording');
-        setStatus('listening...', 'active');
-      };
-
-      recognition.onresult = (event) => {
-        let transcript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
-        }
-
-        if (event.results[event.results.length - 1].isFinal) {
-          stopListening();
-          if (transcript.trim()) {
-            handleUserMessage(transcript.trim());
-          }
-        } else {
-          setStatus(`hearing: "${transcript}"`, 'active');
-        }
-      };
-
-      recognition.onerror = (event) => {
-        console.error('Speech error:', event.error);
-        stopListening();
-        if (event.error === 'no-speech') {
-          setStatus("i didn't hear anything — try again", '');
-        } else if (event.error === 'not-allowed') {
-          setStatus('microphone access denied', '');
-        } else {
-          setStatus('speech error — try again', '');
-        }
-      };
-
-      recognition.onend = () => {
-        stopListening();
-      };
-    }
-
-    // ─── Mic Button ───
-    micBtn.addEventListener('click', () => {
-      if (isProcessing || isSpeaking) return;
-
-      if (isListening) {
-        recognition.stop();
-      } else {
-        startListening();
-      }
+    document.addEventListener('mousemove', (e) => {
+      const cx = window.innerWidth / 2;
+      const cy = window.innerHeight / 2;
+      const dx = (e.clientX - cx) / cx;
+      const dy = (e.clientY - cy) / cy;
+      face.style.transform = `translate(${dx * 6}px, ${dy * 4}px)`;
     });
-
-    // ─── Text Input ───
-    textInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        sendTextMessage();
-      }
-    });
-
-    sendBtn.addEventListener('click', sendTextMessage);
-
-    function sendTextMessage() {
-      const text = textInput.value.trim();
-      if (!text || isProcessing || isSpeaking) return;
-      textInput.value = '';
-      handleUserMessage(text);
-    }
-
-    // ─── Listening Controls ───
-    function startListening() {
-      if (!recognition) {
-        setStatus('speech recognition not supported in this browser', '');
-        return;
-      }
-      // Stop any ongoing speech
-      synthesis.cancel();
-      isSpeaking = false;
-      mouth.classList.remove('talking');
-      face.classList.remove('happy');
-
-      try {
-        recognition.start();
-      } catch (e) {
-        console.error('Could not start recognition:', e);
-      }
-    }
-
-    function stopListening() {
-      isListening = false;
-      face.classList.remove('listening');
-      micBtn.classList.remove('recording');
-    }
-
-    // ─── Handle User Message ───
-    async function handleUserMessage(text) {
-      addMessage(text, 'user');
-      setStatus('thinking...', 'active');
-      isProcessing = true;
-
-      // Add "thinking" bubble
-      const thinkingEl = addMessage('', 'bot', true);
-
-      try {
-        const response = await queryOllama(text);
-        // Remove thinking bubble
-        thinkingEl.remove();
-        addMessage(response, 'bot');
-        isProcessing = false;
-        speakResponse(response);
-      } catch (err) {
-        thinkingEl.remove();
-        isProcessing = false;
-        const errorMsg = err.message.includes('Failed to fetch')
-          ? 'Cannot reach Ollama. Make sure it\'s running on localhost:11434'
-          : 'Something went wrong: ' + err.message;
-        addMessage(errorMsg, 'bot');
-        setStatus('error — check ollama', '');
-      }
-    }
-
-    // ─── Ollama API ───
-    async function queryOllama(prompt) {
-      const systemPrompt = `You are Penny, a friendly and concise AI assistant. Keep responses short (2-3 sentences max) and conversational. Be warm and helpful. Do not use markdown formatting, emojis, or special characters. Speak naturally as if in a real conversation.
-
-CRITICAL LANGUAGE RULE: When the user writes in Nepali (even in Roman script), you MUST reply ONLY in Devanagari script. NEVER write romanized Nepali.
-
-Examples:
-User: timro nam k ho → Reply: मेरो नाम पेनी हो। म एउटा मित्रवत AI सहायक हुँ।
-User: kasto cha → Reply: म ठिक छु, धन्यवाद! तिमीलाई कसरी मद्दत गर्न सक्छु?
-User: mero sathi lai advice deu → Reply: तिम्रो साथीलाई भन्नु, सधैं आफ्नो मनको कुरा खुलेर राख्नु पर्छ।
-
-NEVER write like this: "Mero naam Penny ho" — this is WRONG.
-ALWAYS write like this: "मेरो नाम पेनी हो" — this is CORRECT.`;
-
-      const res = await fetch(OLLAMA_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: MODEL,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: prompt }
-          ],
-          think: false,
-          stream: false,
-          options: {
-            temperature: 0.7,
-            num_predict: 256
-          }
-        })
-      });
-
-      if (!res.ok) {
-        throw new Error(`Ollama returned ${res.status}`);
-      }
-
-      const data = await res.json();
-      // Clean up the response
-      let response = (data.message && data.message.content) || 'I didn\'t quite get that.';
-      // Remove <think>...</think> blocks if still present
-      response = response.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-      // Remove any leftover XML-like tags
-      response = response.replace(/<[^>]+>/g, '').trim();
-      // Remove excessive whitespace
-      response = response.replace(/\s+/g, ' ').trim();
-      return response || 'I didn\'t quite get that.';
-    }
-
-    // ─── Text to Speech (Hybrid: Browser native for EN, Edge TTS for Nepali) ───
-    const synthesis = window.speechSynthesis;
-
-    // Detect Nepali — Devanagari script OR common romanized Nepali words
-    function hasNepali(text) {
-      // Check for Devanagari characters
-      if (/[\u0900-\u097F]/.test(text)) return true;
-      // Fallback: detect romanized Nepali by common words
-      const lower = text.toLowerCase();
-      const nepaliWords = ['mero', 'timro', 'naam', 'kasto', 'cha', 'chha', 'haina',
-        'huncha', 'gardai', 'garna', 'bhayo', 'garnu', 'malai', 'timilai',
-        'tapailai', 'hajur', 'dhanyabad', 'namaste', 'namaskar', 'ramro',
-        'ho', 'hoina', 'ke', 'kina', 'kata', 'kahile', 'kasari', 'ko',
-        'lai', 'sathi', 'didi', 'bhai', 'daju', 'bahini', 'ama', 'baba',
-        'paisa', 'rupiya', 'nepal', 'nepali', 'hola', 'parcha', 'bhannu',
-        'aaja', 'bholi', 'hijo', 'dinchu', 'khana', 'pani', 'ghar'];
-      const words = lower.split(/\s+/);
-      const matches = words.filter(w => nepaliWords.includes(w.replace(/[.,!?]/g, '')));
-      return matches.length >= 2;
-    }
-
-    function speakResponse(text) {
-      if (hasNepali(text)) {
-        speakWithEdgeTTS(text);
-      } else {
-        speakWithBrowser(text);
-      }
-    }
-
-    // ── Fast browser TTS for English ──
-    function speakWithBrowser(text) {
-      synthesis.cancel();
-      isSpeaking = true;
-      mouth.classList.add('talking');
-      face.classList.add('happy');
-      setStatus('speaking...', 'speaking');
-
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
-
-      const voices = synthesis.getVoices();
-      const preferred = voices.find(v => v.name.includes('Google') && v.lang.startsWith('en'))
-        || voices.find(v => v.lang.startsWith('en-US'))
-        || voices.find(v => v.lang.startsWith('en'));
-      if (preferred) utterance.voice = preferred;
-
-      utterance.onend = () => stopSpeaking();
-      utterance.onerror = () => stopSpeaking();
-      synthesis.speak(utterance);
-    }
-
-    // ── Edge TTS for Nepali (proper pronunciation) ──
-    let currentAudio = null;
-    async function speakWithEdgeTTS(text) {
-      if (currentAudio) { currentAudio.pause(); currentAudio = null; }
-
-      isSpeaking = true;
-      mouth.classList.add('talking');
-      face.classList.add('happy');
-      setStatus('speaking (nepali)...', 'speaking');
-
-      try {
-        const lang = hasNepali(text) ? 'ne' : 'en';
-        const res = await fetch('/api/tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, lang })
-        });
-        if (!res.ok) throw new Error('TTS failed');
-
-        const audioBlob = await res.blob();
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const audio = new Audio(audioUrl);
-        currentAudio = audio;
-
-        audio.onended = () => { stopSpeaking(); URL.revokeObjectURL(audioUrl); currentAudio = null; };
-        audio.onerror = () => { stopSpeaking(); URL.revokeObjectURL(audioUrl); currentAudio = null; };
-        await audio.play();
-      } catch (err) {
-        console.error('Edge TTS error:', err);
-        // Fallback to browser TTS
-        speakWithBrowser(text);
-      }
-    }
-
-    function stopSpeaking() {
-      isSpeaking = false;
-      mouth.classList.remove('talking');
-      face.classList.remove('happy');
-      setStatus('tap the mic or type to talk', '');
-    }
-
-    // Preload voices
-    synthesis.onvoiceschanged = () => synthesis.getVoices();
-
-    // ─── Chat UI ───
-    function addMessage(text, sender, isThinking = false) {
-      const msg = document.createElement('div');
-      msg.className = `message ${sender}`;
-
-      const label = document.createElement('div');
-      label.className = 'label';
-      label.textContent = sender === 'user' ? 'You' : 'Penny';
-      msg.appendChild(label);
-
-      const content = document.createElement('div');
-      if (isThinking) {
-        content.className = 'typing-dots';
-        content.textContent = '...';
-      } else {
-        content.textContent = text;
-      }
-      msg.appendChild(content);
-
-      chatMessages.appendChild(msg);
-      chatMessages.scrollTop = chatMessages.scrollHeight;
-
-      return msg;
-    }
-
-    function setStatus(text, type) {
-      statusText.textContent = text;
-      statusText.className = 'status' + (type ? ` ${type}` : '');
-    }
   </script>
 
 </body>
