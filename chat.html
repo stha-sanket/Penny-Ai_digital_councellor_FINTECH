@@ -622,8 +622,7 @@
 
   <script>
     // ─── Config ───
-    const OLLAMA_URL = 'http://localhost:11434/api/chat';
-    const MODEL = 'gemma4:e2b';
+    // Chat API is handled server-side via /api/chat (page-index RAG)
 
     // ─── DOM ───
     const statusText = document.getElementById('statusText');
@@ -787,49 +786,21 @@
       }
     }
 
-    // ─── Ollama API ───
+    // ─── Chat API (server-side page-index RAG) ───
     async function queryOllama(prompt) {
-      const systemPrompt = `You are Penny, a friendly and concise AI assistant. Keep responses short (2-3 sentences max) and conversational. Be warm and helpful. Do not use markdown formatting, emojis, or special characters. Speak naturally as if in a real conversation.
-
-CRITICAL LANGUAGE RULE: When the user writes in Nepali (even in Roman script), you MUST reply ONLY in Devanagari script. NEVER write romanized Nepali.
-
-Examples:
-User: timro nam k ho → Reply: मेरो नाम पेनी हो। म एउटा मित्रवत AI सहायक हुँ।
-User: kasto cha → Reply: म ठिक छु, धन्यवाद! तिमीलाई कसरी मद्दत गर्न सक्छु?
-User: mero sathi lai advice deu → Reply: तिम्रो साथीलाई भन्नु, सधैं आफ्नो मनको कुरा खुलेर राख्नु पर्छ।
-
-NEVER write like this: "Mero naam Penny ho" — this is WRONG.
-ALWAYS write like this: "मेरो नाम पेनी हो" — this is CORRECT.`;
-
-      const res = await fetch(OLLAMA_URL, {
+      const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: MODEL,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: prompt }
-          ],
-          think: false,
-          stream: false,
-          options: {
-            temperature: 0.7,
-            num_predict: 128,
-            num_ctx: 1024
-          }
-        })
+        body: JSON.stringify({ message: prompt })
       });
 
       if (!res.ok) {
-        throw new Error(`Ollama returned ${res.status}`);
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Server returned ${res.status}`);
       }
 
       const data = await res.json();
-      let response = (data.message && data.message.content) || 'I didn\'t quite get that.';
-      response = response.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-      response = response.replace(/<[^>]+>/g, '').trim();
-      response = response.replace(/\s+/g, ' ').trim();
-      return response || 'I didn\'t quite get that.';
+      return data.response || 'I didn\'t quite get that.';
     }
 
     // ─── Text to Speech (Hybrid: Browser native for EN, Edge TTS for Nepali) ───
