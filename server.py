@@ -5,7 +5,6 @@ Penny Voice Server
 - /api/chat — page-index RAG: answers ONLY from data/ folder context
 """
 
-import asyncio
 import io
 import os
 import re
@@ -16,7 +15,6 @@ import queue
 import wave
 from collections import Counter
 
-import edge_tts
 import requests
 from flask import Flask, request, send_from_directory, Response, jsonify
 from flask_cors import CORS
@@ -46,12 +44,6 @@ try:
         print("🔊 Piper ONNX Nepali voice loaded (ne_NP-google-medium)")
 except Exception as e:
     print(f"⚠️ Piper ONNX voice loading warning: {e}")
-
-# ─── Voice configurations (Edge TTS fallback) ───
-VOICES = {
-    'en': {'voice': 'en-US-JennyNeural', 'rate': '+10%', 'pitch': '+0Hz'},
-    'ne': {'voice': 'ne-NP-HemkalaNeural', 'rate': '+10%', 'pitch': '+0Hz'},
-}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -267,16 +259,6 @@ def generate_piper_tts(text: str, lang: str = 'en') -> bytes | None:
     return buf.getvalue()
 
 
-async def generate_tts(text: str, lang: str = 'en') -> bytes:
-    """Generate speech audio from text using Edge TTS."""
-    config = VOICES.get(lang, VOICES['en'])
-    communicate = edge_tts.Communicate(text, config['voice'], rate=config['rate'], pitch=config['pitch'])
-    audio_data = io.BytesIO()
-    async for chunk in communicate.stream():
-        if chunk["type"] == "audio":
-            audio_data.write(chunk["data"])
-    return audio_data.getvalue()
-
 
 # ═══════════════════════════════════════════════════════════════
 #  ROUTES
@@ -393,7 +375,7 @@ def api_chat():
         return jsonify({'error': f'Something went wrong: {str(e)}'}), 500
 
 
-# ─── TTS endpoint (Piper Local ONNX with Edge TTS fallback) ───
+# ─── TTS endpoint (100% Local Offline Piper ONNX) ───
 @app.route('/api/tts', methods=['POST'])
 def tts():
     data = request.get_json(silent=True) or {}
@@ -402,22 +384,13 @@ def tts():
     if not text:
         return Response('No text provided', status=400)
 
-    # 1. Try local fast Piper ONNX TTS (~400ms, offline)
     try:
         piper_audio = generate_piper_tts(text, lang)
-        if piper_audio:
-            return Response(piper_audio, mimetype='audio/wav', headers={
-                'Content-Type': 'audio/wav',
-                'Cache-Control': 'no-cache'
-            })
-    except Exception as e:
-        print(f"⚠️ Piper TTS error, falling back to Edge TTS: {e}")
+        if not piper_audio:
+            return Response('No local voice model available', status=500)
 
-    # 2. Fallback to Microsoft Edge TTS
-    try:
-        audio_bytes = asyncio.run(generate_tts(text, lang))
-        return Response(audio_bytes, mimetype='audio/mpeg', headers={
-            'Content-Type': 'audio/mpeg',
+        return Response(piper_audio, mimetype='audio/wav', headers={
+            'Content-Type': 'audio/wav',
             'Cache-Control': 'no-cache'
         })
     except Exception as e:
@@ -429,6 +402,5 @@ if __name__ == '__main__':
     loaded_piper = ', '.join(PIPER_VOICES.keys()) or 'None'
     print("🤖 Penny Voice Server running at http://localhost:5000")
     print(f"   Local ONNX Voices: {loaded_piper}")
-    print(f"   Edge TTS Fallback: EN={VOICES['en']['voice']}, NE={VOICES['ne']['voice']}")
     print(f"   Data dir: {DATA_DIR}")
     app.run(host='0.0.0.0', port=5000, debug=False)
