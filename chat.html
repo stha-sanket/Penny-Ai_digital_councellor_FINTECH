@@ -824,11 +824,7 @@
     function speakResponse(text) {
       voiceVisualizer.classList.add('active');
       voiceVisualizer.classList.remove('listening');
-      if (hasNepali(text)) {
-        speakWithEdgeTTS(text);
-      } else {
-        speakWithBrowser(text);
-      }
+      speakWithServerTTS(text);
     }
 
     function speakWithBrowser(text) {
@@ -853,21 +849,21 @@
     }
 
     let currentAudio = null;
-    async function speakWithEdgeTTS(text) {
+    async function speakWithServerTTS(text) {
       if (currentAudio) { currentAudio.pause(); currentAudio = null; }
 
       isSpeaking = true;
-      setStatus('speaking (nepali)...', 'speaking');
+      const lang = hasNepali(text) ? 'ne' : 'en';
+      setStatus(`speaking (${lang === 'ne' ? 'nepali' : 'english'})...`, 'speaking');
       broadcastState('speaking');
 
       try {
-        const lang = hasNepali(text) ? 'ne' : 'en';
         const res = await fetch('/api/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text, lang })
         });
-        if (!res.ok) throw new Error('TTS failed');
+        if (!res.ok) throw new Error('TTS server returned ' + res.status);
 
         const audioBlob = await res.blob();
         const audioUrl = URL.createObjectURL(audioBlob);
@@ -878,7 +874,7 @@
         audio.onerror = () => { stopSpeaking(); URL.revokeObjectURL(audioUrl); currentAudio = null; };
         await audio.play();
       } catch (err) {
-        console.error('Edge TTS error:', err);
+        console.warn('Server ONNX TTS error, falling back to browser synthesis:', err);
         speakWithBrowser(text);
       }
     }

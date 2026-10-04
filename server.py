@@ -13,6 +13,7 @@ import math
 import glob
 import json
 import queue
+import wave
 from collections import Counter
 
 import edge_tts
@@ -27,10 +28,29 @@ CORS(app)
 OLLAMA_URL = 'http://localhost:11434/api/chat'
 MODEL = 'gemma4:e2b'
 
-# ─── Voice configurations ───
+# ─── Piper Local ONNX Voice Models ───
+MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models', 'piper')
+PIPER_VOICES = {}
+try:
+    from piper.voice import PiperVoice
+    en_onnx = os.path.join(MODELS_DIR, 'en_US-lessac-medium.onnx')
+    en_json = os.path.join(MODELS_DIR, 'en_US-lessac-medium.onnx.json')
+    ne_onnx = os.path.join(MODELS_DIR, 'ne_NP-google-medium.onnx')
+    ne_json = os.path.join(MODELS_DIR, 'ne_NP-google-medium.onnx.json')
+
+    if os.path.exists(en_onnx) and os.path.exists(en_json):
+        PIPER_VOICES['en'] = PiperVoice.load(en_onnx, config_path=en_json)
+        print("🔊 Piper ONNX English voice loaded (en_US-lessac-medium)")
+    if os.path.exists(ne_onnx) and os.path.exists(ne_json):
+        PIPER_VOICES['ne'] = PiperVoice.load(ne_onnx, config_path=ne_json)
+        print("🔊 Piper ONNX Nepali voice loaded (ne_NP-google-medium)")
+except Exception as e:
+    print(f"⚠️ Piper ONNX voice loading warning: {e}")
+
+# ─── Voice configurations (Edge TTS fallback) ───
 VOICES = {
-    'en': {'voice': 'en-US-JennyNeural', 'rate': '-5%', 'pitch': '+0Hz'},
-    'ne': {'voice': 'ne-NP-HemkalaNeural', 'rate': '+0%', 'pitch': '+0Hz'},
+    'en': {'voice': 'en-US-JennyNeural', 'rate': '+10%', 'pitch': '+0Hz'},
+    'ne': {'voice': 'ne-NP-HemkalaNeural', 'rate': '+10%', 'pitch': '+0Hz'},
 }
 
 
@@ -233,8 +253,19 @@ def build_system_prompt(user_message: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════
-#  TTS (unchanged)
+#  TTS — Piper Local ONNX (Primary) + Edge TTS (Fallback)
 # ═══════════════════════════════════════════════════════════════
+
+def generate_piper_tts(text: str, lang: str = 'en') -> bytes | None:
+    """Generate ultra-fast speech audio locally using Piper ONNX."""
+    voice = PIPER_VOICES.get(lang) or PIPER_VOICES.get('en')
+    if not voice:
+        return None
+    buf = io.BytesIO()
+    with wave.open(buf, 'wb') as wav_file:
+        voice.synthesize_wav(text, wav_file)
+    return buf.getvalue()
+
 
 async def generate_tts(text: str, lang: str = 'en') -> bytes:
     """Generate speech audio from text using Edge TTS."""
@@ -332,9 +363,10 @@ def api_chat():
             ],
             'think': False,
             'stream': False,
+            'keep_alive': -1,  # Keep model in GPU VRAM permanently (eliminates 13s reload delay)
             'options': {
                 'temperature': 0.7,
-                'num_predict': 256,
+                'num_predict': 180,
                 'num_ctx': 2048,
             }
         }
@@ -361,15 +393,27 @@ def api_chat():
         return jsonify({'error': f'Something went wrong: {str(e)}'}), 500
 
 
-# ─── TTS endpoint (unchanged) ───
+# ─── TTS endpoint (Piper Local ONNX with Edge TTS fallback) ───
 @app.route('/api/tts', methods=['POST'])
 def tts():
-    data = request.get_json()
-    text = data.get('text', '')
+    data = request.get_json(silent=True) or {}
+    text = data.get('text', '').strip()
     lang = data.get('lang', 'en')
     if not text:
         return Response('No text provided', status=400)
 
+    # 1. Try local fast Piper ONNX TTS (~400ms, offline)
+    try:
+        piper_audio = generate_piper_tts(text, lang)
+        if piper_audio:
+            return Response(piper_audio, mimetype='audio/wav', headers={
+                'Content-Type': 'audio/wav',
+                'Cache-Control': 'no-cache'
+            })
+    except Exception as e:
+        print(f"⚠️ Piper TTS error, falling back to Edge TTS: {e}")
+
+    # 2. Fallback to Microsoft Edge TTS
     try:
         audio_bytes = asyncio.run(generate_tts(text, lang))
         return Response(audio_bytes, mimetype='audio/mpeg', headers={
@@ -382,7 +426,9 @@ def tts():
 
 
 if __name__ == '__main__':
+    loaded_piper = ', '.join(PIPER_VOICES.keys()) or 'None'
     print("🤖 Penny Voice Server running at http://localhost:5000")
-    print(f"   Voices: EN={VOICES['en']['voice']}, NE={VOICES['ne']['voice']}")
+    print(f"   Local ONNX Voices: {loaded_piper}")
+    print(f"   Edge TTS Fallback: EN={VOICES['en']['voice']}, NE={VOICES['ne']['voice']}")
     print(f"   Data dir: {DATA_DIR}")
     app.run(host='0.0.0.0', port=5000, debug=False)
