@@ -1,0 +1,36 @@
+# Python Virtual Environment
+venv/
+.venv/
+env/
+ENV/
+
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# # Large Model Weights (Keep out of Git / GitHub file size limits)
+# models/
+# *.onnx
+
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+
+# Logs & Temporary Files
+*.log
+*.tmp
+*.bak
+
+# OS-Specific Files
+.DS_Store
+Thumbs.db
+
+# IDE & Editor Settings (Optional)
+.vscode/
+.idea/
