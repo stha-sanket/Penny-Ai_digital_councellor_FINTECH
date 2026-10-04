@@ -11,6 +11,8 @@ import os
 import re
 import math
 import glob
+import json
+import queue
 from collections import Counter
 
 import edge_tts
@@ -257,6 +259,57 @@ def index():
 @app.route('/chat.html')
 def chat():
     return send_from_directory('.', 'chat.html')
+
+
+# ─── Multi-Device State Synchronization ───
+current_state = 'idle'
+state_subscribers = []
+
+@app.route('/api/state', methods=['GET', 'POST'])
+def handle_state():
+    global current_state
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        new_state = data.get('state', 'idle')
+        current_state = new_state
+        dead = []
+        for q in state_subscribers:
+            try:
+                q.put_nowait(current_state)
+            except Exception:
+                dead.append(q)
+        for q in dead:
+            if q in state_subscribers:
+                state_subscribers.remove(q)
+        return jsonify({'ok': True, 'state': current_state})
+    return jsonify({'state': current_state})
+
+
+@app.route('/api/events')
+def events():
+    """Server-Sent Events (SSE) stream to sync robot face state across laptops."""
+    def stream():
+        q = queue.Queue(maxsize=20)
+        state_subscribers.append(q)
+        # Send current state immediately on connection
+        yield f"data: {json.dumps({'state': current_state})}\n\n"
+        try:
+            while True:
+                try:
+                    state = q.get(timeout=20)
+                    yield f"data: {json.dumps({'state': state})}\n\n"
+                except queue.Empty:
+                    # Heartbeat to keep connection alive
+                    yield ": ping\n\n"
+        except GeneratorExit:
+            if q in state_subscribers:
+                state_subscribers.remove(q)
+
+    return Response(stream(), mimetype='text/event-stream', headers={
+        'Cache-Control': 'no-cache',
+        'X-Accel-Buffering': 'no',
+        'Connection': 'keep-alive',
+    })
 
 
 # ─── NEW: Chat endpoint with page-index RAG ───
