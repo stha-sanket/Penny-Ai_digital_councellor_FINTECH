@@ -596,9 +596,15 @@
   <!-- Top Navigation -->
   <div class="top-bar">
     <span class="top-bar-title">Penny — Chat & Voice</span>
-    <div class="connection-indicator">
-      <div class="connection-dot"></div>
-      <span>Connected</span>
+    <div style="display: flex; align-items: center; gap: 14px;">
+      <button class="lang-badge" id="langBadge" title="Click to toggle English / Nepali" onclick="toggleLanguage()">
+        <span class="lang-tag" id="langTag">EN</span>
+        <span class="lang-name" id="langName">English</span>
+      </button>
+      <div class="connection-indicator">
+        <div class="connection-dot"></div>
+        <span>Connected</span>
+      </div>
     </div>
   </div>
 
