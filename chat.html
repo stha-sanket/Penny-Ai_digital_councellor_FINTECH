@@ -685,6 +685,68 @@
     let recognition = null;
     let hasFirstMessage = false;
 
+    // ─── Language State (1 = EN, 0 = NE) ───
+    let currentLangCode = '1';
+    let currentLang = 'en';
+
+    function updateLanguageUI(code, lang) {
+      if (code) currentLangCode = String(code).trim();
+      currentLang = lang || (currentLangCode === '0' ? 'ne' : 'en');
+
+      const langTag = document.getElementById('langTag');
+      const langName = document.getElementById('langName');
+      const langBadge = document.getElementById('langBadge');
+      if (langTag && langName && langBadge) {
+        if (currentLangCode === '0') {
+          langTag.textContent = 'NE';
+          langName.textContent = 'नेपाली';
+          langBadge.classList.add('nepali');
+        } else {
+          langTag.textContent = 'EN';
+          langName.textContent = 'English';
+          langBadge.classList.remove('nepali');
+        }
+      }
+
+      if (recognition) {
+        recognition.lang = currentLangCode === '0' ? 'ne-NP' : 'en-US';
+      }
+    }
+
+    async function fetchLanguageState() {
+      try {
+        const res = await fetch('/api/language');
+        if (res.ok) {
+          const data = await res.json();
+          updateLanguageUI(data.language, data.code);
+        }
+      } catch (e) {
+        console.warn('Could not fetch language state:', e);
+      }
+    }
+
+    async function toggleLanguage() {
+      const nextCode = currentLangCode === '1' ? '0' : '1';
+      try {
+        const res = await fetch('/api/language', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ language: nextCode })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          updateLanguageUI(data.language, data.code);
+          const notice = nextCode === '0'
+            ? 'भाषा नेपालीमा परिवर्तन भयो।'
+            : 'Language switched to English.';
+          setStatus(notice, 'active');
+          setTimeout(() => setStatus('tap the mic or type to talk', ''), 2500);
+        }
+      } catch (e) {
+        console.error('Could not toggle language:', e);
+      }
+    }
+
     // ─── BroadcastChannel — send state to face page ───
     const channel = new BroadcastChannel('penny-state');
 
@@ -699,7 +761,7 @@
       recognition = new SpeechRecognition();
       recognition.continuous = false;
       recognition.interimResults = true;
-      recognition.lang = 'en-US';
+      recognition.lang = currentLangCode === '0' ? 'ne-NP' : 'en-US';
 
       recognition.onstart = () => {
         isListening = true;
