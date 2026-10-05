@@ -185,24 +185,124 @@ page_index = PageIndex(DATA_DIR)
 
 
 # ═══════════════════════════════════════════════════════════════
+#  LANGUAGE PERSISTENCE & MANAGEMENT (language.txt)
+#  1 = English, 0 = Nepali
+# ═══════════════════════════════════════════════════════════════
+
+LANGUAGE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'language.txt')
+
+def get_current_language() -> str:
+    """Returns '1' for English, '0' for Nepali. Defaults to '1'."""
+    if os.path.exists(LANGUAGE_FILE):
+        try:
+            with open(LANGUAGE_FILE, 'r', encoding='utf-8') as f:
+                val = f.read().strip()
+                if val in ('0', '1'):
+                    return val
+        except Exception as e:
+            print(f"⚠️ Error reading language.txt: {e}")
+    return '1'
+
+def set_current_language(val: str):
+    """Stores '1' (English) or '0' (Nepali) into language.txt."""
+    if val not in ('0', '1'):
+        return
+    try:
+        with open(LANGUAGE_FILE, 'w', encoding='utf-8') as f:
+            f.write(val)
+        print(f"🌐 language.txt set to: {val} ({'English' if val == '1' else 'Nepali'})")
+    except Exception as e:
+        print(f"⚠️ Error writing to language.txt: {e}")
+
+# Ensure language.txt exists on startup
+if not os.path.exists(LANGUAGE_FILE):
+    set_current_language('1')
+
+
+def detect_language_command(text: str) -> tuple[str | None, bool]:
+    """
+    Detects if the user asks to switch language.
+    Returns (lang_code, is_pure_switch_command):
+      - lang_code: '1' for English, '0' for Nepali, or None
+      - is_pure_switch_command: True if message was only asking to change language
+    """
+    clean = text.lower().strip()
+    clean_no_punct = re.sub(r'^[^\w]+|[^\w]+$', '', clean)
+
+    if clean_no_punct in ('english', 'angreji', 'अंग्रेजी'):
+        return '1', True
+    if clean_no_punct in ('nepali', 'नेपाली'):
+        return '0', True
+
+    nepali_patterns = [
+        r'\b(?:speak|talk|reply|answer|converse|switch(?:\s+to)?|change(?:\s+language)?(?:\s+to)?|use)\s+(?:in\s+)?nepali\b',
+        r'\b(?:can\s+you\s+|please\s+)?(?:speak|talk)\s+(?:in\s+)?nepali\b',
+        r'\bnepali\s+(?:please|language)\b',
+        r'\bnepali\s+ma\s+(?:bol|bola|bolnu|kura\s+gara|kura\s+garnus|jawab\s+deu)\b',
+        r'नेपालीमा\s*(?:बोल|कुरा\s*गर|जवाफ\s*देउ|भन)',
+        r'नेपाली\s*(?:बोल|भाषामा\s*बोल)',
+    ]
+
+    english_patterns = [
+        r'\b(?:speak|talk|reply|answer|converse|switch(?:\s+to)?|change(?:\s+language)?(?:\s+to)?|use)\s+(?:in\s+)?(?:english|angreji)\b',
+        r'\b(?:can\s+you\s+|please\s+)?(?:speak|talk)\s+(?:in\s+)?(?:english|angreji)\b',
+        r'\b(?:english|angreji)\s+(?:please|language)\b',
+        r'\b(?:english|angreji)\s+ma\s+(?:bol|bola|bolnu|kura\s+gara|kura\s+garnus|jawab\s+deu)\b',
+        r'अंग्रेजीमा\s*(?:बोल|कुरा\s*गर|जवाफ\s*देउ|भन)',
+        r'अंग्रेजी\s*(?:बोल|भाषामा\s*बोल)',
+    ]
+
+    def check_purity(phrase, pat):
+        remainder = re.sub(pat, '', phrase, flags=re.I).strip()
+        remainder = re.sub(r'\b(can you|could you|please|from now on|now|hai|na|kripaya|la|ok|okay)\b', '', remainder, flags=re.I).strip(' ,.!?')
+        return len(remainder) == 0
+
+    for pat in nepali_patterns:
+        if re.search(pat, clean):
+            return '0', check_purity(clean, pat)
+
+    for pat in english_patterns:
+        if re.search(pat, clean):
+            return '1', check_purity(clean, pat)
+
+    return None, False
+
+
+# ═══════════════════════════════════════════════════════════════
 #  SYSTEM PROMPT BUILDER
 # ═══════════════════════════════════════════════════════════════
 
-SYSTEM_BASE = """You are Penny, a friendly and concise AI assistant for Sunway College Kathmandu. Keep responses short (2-3 sentences max) and conversational. Be warm and helpful. Do not use markdown formatting, emojis, or special characters. Speak naturally as if in a real conversation.
+SYSTEM_BASE_EN = """You are Penny, a friendly and concise AI assistant for Sunway College Kathmandu. Keep responses short (2-3 sentences max) and conversational. Be warm and helpful. Do not use markdown formatting, emojis, or special characters. Speak naturally as if in a real conversation.
 
-CRITICAL LANGUAGE RULE: When the user writes in Nepali (even in Roman script), you MUST reply ONLY in Devanagari script. NEVER write romanized Nepali.
+CRITICAL LANGUAGE RULE: You MUST answer ONLY in English. Do NOT answer in Nepali or Devanagari script. Every response must be clear, natural English."""
+
+CONTEXT_INSTRUCTION_EN = """
+IMPORTANT KNOWLEDGE RULE:
+You MUST answer ONLY using the CONTEXT provided below. Do NOT use any outside knowledge.
+If the answer is NOT found in the context, say: "I don't have information about that in my knowledge base. I can only help with questions about Sunway College Kathmandu, its programs, staff, RAIN incubation center, and related topics."
+
+CONTEXT:
+{context}
+"""
+
+SYSTEM_BASE_NE = """You are Penny, a friendly and concise AI assistant for Sunway College Kathmandu. Keep responses short (2-3 sentences max) and conversational. Be warm and helpful. Do not use markdown formatting, emojis, or special characters. Speak naturally as if in a real conversation.
+
+CRITICAL LANGUAGE RULE: You MUST reply ONLY in Nepali using Devanagari script (नेपाली भाषा / देवनागरी लिपि). NEVER reply in English. NEVER write romanized Nepali (no Latin script).
+Even if the user writes in English or Roman Nepali, your entire response MUST be in pure Nepali Devanagari.
 
 Examples:
 User: timro nam k ho → Reply: मेरो नाम पेनी हो। म सनवे कलेजको AI सहायक हुँ।
 User: kasto cha → Reply: म ठिक छु, धन्यवाद! तिमीलाई कसरी मद्दत गर्न सक्छु?
+User: What courses do you have? → Reply: सनवे कलेजमा बीएससी आईटी, डेटा साइन्स र अन्य कम्प्युटिङ प्रोग्रामहरू उपलब्ध छन्।
 
 NEVER write like this: "Mero naam Penny ho" — this is WRONG.
 ALWAYS write like this: "मेरो नाम पेनी हो" — this is CORRECT."""
 
-CONTEXT_INSTRUCTION = """
+CONTEXT_INSTRUCTION_NE = """
 IMPORTANT KNOWLEDGE RULE:
 You MUST answer ONLY using the CONTEXT provided below. Do NOT use any outside knowledge.
-If the answer is NOT found in the context, say: "I don't have information about that in my knowledge base. I can only help with questions about Sunway College Kathmandu, its programs, staff, RAIN incubation center, and related topics."
+Your response MUST be in Nepali in Devanagari script.
+If the answer is NOT found in the context, say in Nepali: "मसँग मेरो ज्ञानकोषमा यस बारे जानकारी छैन। म केवल सनवे कलेज काठमाडौंका कार्यक्रम, कर्मचारी र RAIN इन्क्युबेशन सेन्टर सम्बन्धी प्रश्नहरूमा मद्दत गर्न सक्छु।"
 
 CONTEXT:
 {context}
@@ -223,14 +323,17 @@ def is_greeting(text: str) -> bool:
     )
 
 
-def build_system_prompt(user_message: str) -> str:
-    """Build the system prompt, injecting relevant page context if available."""
+def build_system_prompt(user_message: str, lang_code: str) -> str:
+    """Build the language-specific system prompt, injecting relevant page context if available."""
+    is_en = (lang_code == '1')
+    base = SYSTEM_BASE_EN if is_en else SYSTEM_BASE_NE
+    context_tpl = CONTEXT_INSTRUCTION_EN if is_en else CONTEXT_INSTRUCTION_NE
+
     if is_greeting(user_message):
-        return SYSTEM_BASE
+        return base
 
     results = page_index.search(user_message, top_k=3)
     if not results:
-        # No relevant pages found — still constrain the LLM
         context = "(No relevant information found in the knowledge base.)"
     else:
         context_parts = []
@@ -241,7 +344,7 @@ def build_system_prompt(user_message: str) -> str:
             )
         context = "\n\n".join(context_parts)
 
-    return SYSTEM_BASE + CONTEXT_INSTRUCTION.format(context=context)
+    return base + context_tpl.format(context=context)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -325,16 +428,63 @@ def events():
     })
 
 
+# ─── Language state endpoint (GET / POST) ───
+@app.route('/api/language', methods=['GET', 'POST'])
+def api_language():
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        val = str(data.get('language', '')).strip()
+        if not val and 'lang' in data:
+            val = '0' if data['lang'] == 'ne' else '1'
+        if val in ('0', '1'):
+            set_current_language(val)
+            return jsonify({
+                'ok': True,
+                'language': val,
+                'code': 'en' if val == '1' else 'ne',
+                'name': 'English' if val == '1' else 'Nepali'
+            })
+        return jsonify({'error': 'Invalid language code. Use "1" for English or "0" for Nepali.'}), 400
+
+    val = get_current_language()
+    return jsonify({
+        'language': val,
+        'code': 'en' if val == '1' else 'ne',
+        'name': 'English' if val == '1' else 'Nepali'
+    })
+
+
 # ─── NEW: Chat endpoint with page-index RAG ───
 @app.route('/api/chat', methods=['POST'])
 def api_chat():
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     user_message = data.get('message', '').strip()
     if not user_message:
         return jsonify({'error': 'No message provided'}), 400
 
-    # Build context-aware system prompt
-    system_prompt = build_system_prompt(user_message)
+    # 1. Check if the user is giving a command to change language
+    detected_lang, is_pure_switch = detect_language_command(user_message)
+    if detected_lang is not None:
+        set_current_language(detected_lang)
+
+    # 2. Get active language ('1' = English, '0' = Nepali)
+    active_lang_code = get_current_language()
+    lang_iso = 'en' if active_lang_code == '1' else 'ne'
+
+    # If the user solely commanded to switch language, give an immediate conversational confirmation
+    if detected_lang is not None and is_pure_switch:
+        if active_lang_code == '1':
+            confirmation = "Sure, I will speak in English from now on. How can I help you today?"
+        else:
+            confirmation = "हुन्छ, अबदेखि म नेपालीमा बोल्नेछु। म तपाईंलाई कसरी मद्दत गर्न सक्छु?"
+        return jsonify({
+            'response': confirmation,
+            'lang': lang_iso,
+            'language': active_lang_code
+        })
+
+    # 3. Build context-aware system prompt for the active language
+    system_prompt = build_system_prompt(user_message, active_lang_code)
 
     try:
         ollama_payload = {
@@ -364,9 +514,13 @@ def api_chat():
         response_text = re.sub(r'\s+', ' ', response_text).strip()
 
         if not response_text:
-            response_text = "I didn't quite get that."
+            response_text = "I didn't quite get that." if active_lang_code == '1' else "मैले बुझिन, कृपया फेरि भन्नुहोस्।"
 
-        return jsonify({'response': response_text})
+        return jsonify({
+            'response': response_text,
+            'lang': lang_iso,
+            'language': active_lang_code
+        })
 
     except requests.exceptions.ConnectionError:
         return jsonify({'error': 'Cannot reach Ollama. Make sure it\'s running on localhost:11434'}), 503
@@ -380,14 +534,26 @@ def api_chat():
 def tts():
     data = request.get_json(silent=True) or {}
     text = data.get('text', '').strip()
-    lang = data.get('lang', 'en')
     if not text:
         return Response('No text provided', status=400)
+
+    # Determine language from request or language.txt
+    lang = data.get('lang')
+    if not lang:
+        lang = 'en' if get_current_language() == '1' else 'ne'
+
+    # Always ensure text with Devanagari script uses Nepali voice
+    if re.search(r'[\u0900-\u097F]', text):
+        lang = 'ne'
 
     try:
         piper_audio = generate_piper_tts(text, lang)
         if not piper_audio:
-            return Response('No local voice model available', status=500)
+            # Fallback to alternate voice if primary isn't loaded
+            fallback_lang = 'en' if lang != 'en' else 'ne'
+            piper_audio = generate_piper_tts(text, fallback_lang)
+            if not piper_audio:
+                return Response('No local voice model available', status=500)
 
         return Response(piper_audio, mimetype='audio/wav', headers={
             'Content-Type': 'audio/wav',
