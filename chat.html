@@ -157,9 +157,46 @@
     @keyframes dotPulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.4; }
+    .lang-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      background: var(--surface);
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      letter-spacing: 0.04em;
     }
 
-    /* ─── Chat Container ─── */
+    .lang-badge:hover {
+      border-color: var(--green);
+      background: var(--surface-hover);
+      box-shadow: 0 0 12px var(--green-glow);
+      transform: translateY(-1px);
+    }
+
+    .lang-badge .lang-tag {
+      font-weight: 700;
+      color: var(--green);
+      background: rgba(30, 255, 0, 0.12);
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+
+    .lang-badge.nepali .lang-tag {
+      color: #00e5ff;
+      background: rgba(0, 229, 255, 0.12);
+    }
+
+    .lang-badge .lang-name {
+      color: var(--text-dim);
+    }
     .chat-container {
       flex: 1;
       display: flex;
