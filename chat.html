@@ -876,11 +876,15 @@
       const thinkingEl = addMessage('', 'bot', true);
 
       try {
-        const response = await queryOllama(text);
+        const result = await queryOllama(text);
         thinkingEl.remove();
-        addMessage(response, 'bot');
+
+        const responseText = (typeof result === 'object' && result.response) ? result.response : (result || "I didn't quite get that.");
+        const responseLang = (typeof result === 'object' && result.lang) ? result.lang : currentLang;
+
+        addMessage(responseText, 'bot');
         isProcessing = false;
-        speakResponse(response);
+        speakResponse(responseText, responseLang);
       } catch (err) {
         thinkingEl.remove();
         isProcessing = false;
@@ -907,10 +911,13 @@
       }
 
       const data = await res.json();
-      return data.response || 'I didn\'t quite get that.';
+      if (data && data.language) {
+        updateLanguageUI(data.language, data.lang);
+      }
+      return data;
     }
 
-    // ─── Text to Speech (Hybrid: Browser native for EN, Edge TTS for Nepali) ───
+    // ─── Text to Speech (Local Piper ONNX with active voice) ───
     const synthesis = window.speechSynthesis;
 
     function hasNepali(text) {
@@ -928,13 +935,13 @@
       return matches.length >= 2;
     }
 
-    function speakResponse(text) {
+    function speakResponse(text, lang) {
       voiceVisualizer.classList.add('active');
       voiceVisualizer.classList.remove('listening');
-      speakWithServerTTS(text);
+      speakWithServerTTS(text, lang);
     }
 
-    function speakWithBrowser(text) {
+    function speakWithBrowser(text, lang) {
       synthesis.cancel();
       isSpeaking = true;
       setStatus('speaking...', 'speaking');
@@ -945,9 +952,13 @@
       utterance.pitch = 1.0;
 
       const voices = synthesis.getVoices();
-      const preferred = voices.find(v => v.name.includes('Google') && v.lang.startsWith('en'))
-        || voices.find(v => v.lang.startsWith('en-US'))
-        || voices.find(v => v.lang.startsWith('en'));
+      const isNe = (lang === 'ne' || hasNepali(text));
+      const preferred = isNe
+        ? (voices.find(v => v.lang.startsWith('ne')) || voices.find(v => v.lang.startsWith('hi')))
+        : (voices.find(v => v.name.includes('Google') && v.lang.startsWith('en'))
+          || voices.find(v => v.lang.startsWith('en-US'))
+          || voices.find(v => v.lang.startsWith('en'));
+
       if (preferred) utterance.voice = preferred;
 
       utterance.onend = () => stopSpeaking();
@@ -956,19 +967,19 @@
     }
 
     let currentAudio = null;
-    async function speakWithServerTTS(text) {
+    async function speakWithServerTTS(text, lang) {
       if (currentAudio) { currentAudio.pause(); currentAudio = null; }
 
       isSpeaking = true;
-      const lang = hasNepali(text) ? 'ne' : 'en';
-      setStatus(`speaking (${lang === 'ne' ? 'nepali' : 'english'})...`, 'speaking');
+      const targetLang = lang || (hasNepali(text) ? 'ne' : currentLang);
+      setStatus(`speaking (${targetLang === 'ne' ? 'nepali' : 'english'})...`, 'speaking');
       broadcastState('speaking');
 
       try {
         const res = await fetch('/api/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, lang })
+          body: JSON.stringify({ text, lang: targetLang })
         });
         if (!res.ok) throw new Error('TTS server returned ' + res.status);
 
@@ -982,7 +993,7 @@
         await audio.play();
       } catch (err) {
         console.warn('Server ONNX TTS error, falling back to browser synthesis:', err);
-        speakWithBrowser(text);
+        speakWithBrowser(text, targetLang);
       }
     }
 
