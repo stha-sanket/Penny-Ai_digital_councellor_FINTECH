@@ -1044,6 +1044,9 @@
       statusText.className = 'status' + (type ? ` ${type}` : '');
     }
 
+    // ─── Initialize Language State ───
+    fetchLanguageState();
+
     // ─── Focus input on page load ───
     textInput.focus();
 
