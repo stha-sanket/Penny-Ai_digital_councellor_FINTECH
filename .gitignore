@@ -34,3 +34,9 @@ Thumbs.db
 # IDE & Editor Settings (Optional)
 .vscode/
 .idea/
+
+# Evaluation Database & Traces
+eval/*.db
+eval/*.jsonl
+eval_export_*.json
+eval_export_*.csv

@@ -488,11 +488,14 @@ def api_language():
     })
 
 
-# ─── NEW: Chat endpoint with page-index RAG (Supports streaming & non-streaming) ───
+# ─── NEW: Chat endpoint with page-index RAG & Evaluation Tracing (Streaming & non-streaming) ───
 @app.route('/api/chat', methods=['POST'])
 def api_chat():
+    start_time = time.time()
+    trace_id = str(uuid.uuid4())
     data = request.get_json(silent=True) or {}
     user_message = data.get('message', '').strip()
+    session_id = data.get('session_id')
     stream_requested = bool(data.get('stream', False))
     if not user_message:
         return jsonify({'error': 'No message provided'}), 400
@@ -513,25 +516,68 @@ def api_chat():
         else:
             confirmation = "हुन्छ, अबदेखि म नेपालीमा बोल्नेछु। म तपाईंलाई कसरी मद्दत गर्न सक्छु?"
 
+        total_lat = (time.time() - start_time) * 1000
+        log_chat_interaction(
+            user_query=user_message,
+            language_code=active_lang_code,
+            retrieval_chunks=[],
+            system_prompt="(Language switch command)",
+            model_response=confirmation,
+            model_name=MODEL,
+            session_id=session_id,
+            detected_lang_action='switch_to_' + ('en' if active_lang_code == '1' else 'ne'),
+            is_greeting=False,
+            stream_requested=stream_requested,
+            total_latency_ms=total_lat,
+            status='switch_command',
+            trace_id=trace_id
+        )
+        try:
+            evaluate_trace(trace_id, use_llm_judge=False)
+        except Exception:
+            pass
+
         if stream_requested:
             def switch_stream():
-                yield f"data: {json.dumps({'type': 'start', 'lang': lang_iso, 'language': active_lang_code})}\n\n"
+                yield f"data: {json.dumps({'type': 'start', 'lang': lang_iso, 'language': active_lang_code, 'trace_id': trace_id})}\n\n"
                 yield f"data: {json.dumps({'type': 'chunk', 'content': confirmation})}\n\n"
-                yield f"data: {json.dumps({'type': 'done', 'response': confirmation, 'lang': lang_iso, 'language': active_lang_code})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'response': confirmation, 'lang': lang_iso, 'language': active_lang_code, 'trace_id': trace_id})}\n\n"
             return Response(switch_stream(), mimetype='text/event-stream', headers={
                 'Cache-Control': 'no-cache',
                 'X-Accel-Buffering': 'no',
                 'Connection': 'keep-alive',
+                'X-Penny-Trace-Id': trace_id
             })
 
-        return jsonify({
+        resp = jsonify({
             'response': confirmation,
             'lang': lang_iso,
-            'language': active_lang_code
+            'language': active_lang_code,
+            'trace_id': trace_id
         })
+        resp.headers['X-Penny-Trace-Id'] = trace_id
+        return resp
 
-    # 3. Build context-aware system prompt for the active language
-    system_prompt = build_system_prompt(user_message, active_lang_code)
+    # 3. Build context-aware system prompt and measure retrieval
+    greeting_flag = is_greeting(user_message)
+    retrieval_start = time.time()
+    system_prompt, retrieval_chunks = build_system_prompt_with_retrieval(user_message, active_lang_code)
+    retrieval_lat = (time.time() - retrieval_start) * 1000
+
+    # Initial trace logging
+    log_chat_interaction(
+        user_query=user_message,
+        language_code=active_lang_code,
+        retrieval_chunks=retrieval_chunks,
+        system_prompt=system_prompt,
+        model_name=MODEL,
+        session_id=session_id,
+        is_greeting=greeting_flag,
+        stream_requested=stream_requested,
+        retrieval_latency_ms=retrieval_lat,
+        status='running',
+        trace_id=trace_id
+    )
 
     ollama_payload = {
         'model': MODEL,
@@ -549,10 +595,12 @@ def api_chat():
         }
     }
 
+    llm_start = time.time()
+
     if stream_requested:
         def stream_chat():
             # Send initial metadata
-            yield f"data: {json.dumps({'type': 'start', 'lang': lang_iso, 'language': active_lang_code})}\n\n"
+            yield f"data: {json.dumps({'type': 'start', 'lang': lang_iso, 'language': active_lang_code, 'trace_id': trace_id})}\n\n"
             full_response_parts = []
             try:
                 res = requests.post(OLLAMA_URL, json=ollama_payload, stream=True, timeout=60)
@@ -580,17 +628,31 @@ def api_chat():
                 full_text = re.sub(r'<[^>]+>', '', full_text).strip()
                 if not full_text:
                     full_text = "I didn't quite get that." if active_lang_code == '1' else "मैले बुझिन, कृपया फेरि भन्नुहोस्।"
-                yield f"data: {json.dumps({'type': 'done', 'response': full_text, 'lang': lang_iso, 'language': active_lang_code})}\n\n"
+
+                llm_lat = (time.time() - llm_start) * 1000
+                total_lat = (time.time() - start_time) * 1000
+
+                update_trace_response(trace_id, full_text, llm_lat, total_lat, status='success')
+                try:
+                    evaluate_trace(trace_id, use_llm_judge=False)
+                except Exception as e:
+                    print(f"Eval diagnosis error: {e}")
+
+                yield f"data: {json.dumps({'type': 'done', 'response': full_text, 'lang': lang_iso, 'language': active_lang_code, 'trace_id': trace_id})}\n\n"
 
             except Exception as e:
                 print(f"Ollama stream error: {e}")
                 err_msg = "Cannot reach Ollama. Make sure it's running." if "ConnectionError" in str(e) else f"Error: {e}"
-                yield f"data: {json.dumps({'type': 'error', 'error': err_msg})}\n\n"
+                llm_lat = (time.time() - llm_start) * 1000
+                total_lat = (time.time() - start_time) * 1000
+                update_trace_response(trace_id, f"Error: {err_msg}", llm_lat, total_lat, status='error')
+                yield f"data: {json.dumps({'type': 'error', 'error': err_msg, 'trace_id': trace_id})}\n\n"
 
         return Response(stream_chat(), mimetype='text/event-stream', headers={
             'Cache-Control': 'no-cache',
             'X-Accel-Buffering': 'no',
             'Connection': 'keep-alive',
+            'X-Penny-Trace-Id': trace_id
         })
 
     # Non-streaming fallback
@@ -607,17 +669,111 @@ def api_chat():
         if not response_text:
             response_text = "I didn't quite get that." if active_lang_code == '1' else "मैले बुझिन, कृपया फेरि भन्नुहोस्।"
 
-        return jsonify({
+        llm_lat = (time.time() - llm_start) * 1000
+        total_lat = (time.time() - start_time) * 1000
+
+        update_trace_response(trace_id, response_text, llm_lat, total_lat, status='success')
+        try:
+            evaluate_trace(trace_id, use_llm_judge=False)
+        except Exception as e:
+            print(f"Eval diagnosis error: {e}")
+
+        resp_obj = jsonify({
             'response': response_text,
             'lang': lang_iso,
-            'language': active_lang_code
+            'language': active_lang_code,
+            'trace_id': trace_id
         })
+        resp_obj.headers['X-Penny-Trace-Id'] = trace_id
+        return resp_obj
 
     except requests.exceptions.ConnectionError:
+        llm_lat = (time.time() - llm_start) * 1000
+        total_lat = (time.time() - start_time) * 1000
+        update_trace_response(trace_id, "Cannot reach Ollama", llm_lat, total_lat, status='error')
         return jsonify({'error': 'Cannot reach Ollama. Make sure it\'s running on localhost:11434'}), 503
     except Exception as e:
         print(f"Chat Error: {e}")
+        llm_lat = (time.time() - llm_start) * 1000
+        total_lat = (time.time() - start_time) * 1000
+        update_trace_response(trace_id, str(e), llm_lat, total_lat, status='error')
         return jsonify({'error': f'Something went wrong: {str(e)}'}), 500
+
+
+# ═══════════════════════════════════════════════════════════════
+#  EVALUATION & TRACING LAB ROUTES
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/eval')
+@app.route('/eval.html')
+def eval_dashboard():
+    """Serves the Evaluation & Tracing dashboard."""
+    return send_from_directory('eval', 'dashboard.html')
+
+
+@app.route('/api/eval/traces', methods=['GET'])
+def api_eval_traces():
+    verdict = request.args.get('verdict')
+    limit = int(request.args.get('limit', 50))
+    offset = int(request.args.get('offset', 0))
+    search = request.args.get('search')
+    traces = get_traces(verdict_filter=verdict, limit=limit, offset=offset, search=search)
+    return jsonify(traces)
+
+
+@app.route('/api/eval/traces/<trace_id>', methods=['GET'])
+def api_eval_trace(trace_id):
+    t = get_trace(trace_id)
+    if not t:
+        return jsonify({'error': 'Trace not found'}), 404
+    return jsonify(t)
+
+
+@app.route('/api/eval/diagnose/<trace_id>', methods=['POST'])
+def api_eval_diagnose(trace_id):
+    use_llm = request.args.get('llm') in ('1', 'true', 'True')
+    try:
+        diag = evaluate_trace(trace_id, use_llm_judge=use_llm)
+        return jsonify(diag)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/eval/diagnose-batch', methods=['POST'])
+def api_eval_diagnose_batch():
+    use_llm = request.args.get('llm') in ('1', 'true', 'True')
+    try:
+        res = evaluate_all_pending(use_llm_judge=use_llm)
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/eval/feedback/<trace_id>', methods=['POST'])
+def api_eval_feedback(trace_id):
+    data = request.get_json(silent=True) or {}
+    verdict = data.get('verdict', '')
+    notes = data.get('notes', '')
+    update_human_feedback(trace_id, verdict, notes)
+    return jsonify({'ok': True})
+
+
+@app.route('/api/eval/stats', methods=['GET'])
+def api_eval_stats():
+    return jsonify(get_statistics())
+
+
+@app.route('/api/eval/export', methods=['GET'])
+def api_eval_export():
+    fmt = request.args.get('format', 'json').lower()
+    data_str = export_traces_data(format=fmt)
+    mimetype = 'text/csv' if fmt == 'csv' else 'application/json'
+    filename = f"penny_eval_traces.{fmt}"
+    return Response(
+        data_str,
+        mimetype=mimetype,
+        headers={'Content-Disposition': f'attachment;filename={filename}'}
+    )
 
 
 # ─── TTS endpoint (100% Local Offline Piper ONNX) ───

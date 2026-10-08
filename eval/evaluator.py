@@ -63,6 +63,27 @@ STOP_WORDS = frozenset([
 ])
 
 
+def stem(word: str) -> str:
+    """Simple rule-based English suffix stripper for robust matching."""
+    w = word.lower()
+    for suffix in ('ation', 'ated', 'ating', 'tion', 'ment', 'ence', 'ance', 'ness', 'ers', 'ing', 'ies', 'es', 'ed', 'er', 's'):
+        if len(w) > len(suffix) + 3 and w.endswith(suffix):
+            return w[:-len(suffix)]
+    return w
+
+
+def tokens_overlap(tokens: List[str], target_text: str) -> List[str]:
+    """Finds query tokens that match words in target text either exactly or via root stem."""
+    target_words = set(re.findall(r'[a-zA-Z0-9\u0900-\u097F]+', target_text.lower()))
+    target_stems = {stem(w) for w in target_words}
+    matched = []
+    for t in tokens:
+        t_stem = stem(t)
+        if t in target_words or t_stem in target_stems or any(w.startswith(t_stem) for w in target_words if len(t_stem) >= 4):
+            matched.append(t)
+    return matched
+
+
 class CorpusScanner:
     """
     Exhaustive scanner across all markdown files in data/ to verify if any
@@ -114,14 +135,14 @@ class CorpusScanner:
         results = []
         for sec in self.sections:
             content = sec['lower_content']
-            matched_terms = [t for t in query_tokens if t in content]
+            matched_terms = tokens_overlap(query_tokens, content)
             if not matched_terms:
                 continue
 
             score = len(matched_terms) / len(query_tokens)
             # Boost if query tokens appear in title
             title_lower = sec['title'].lower()
-            if any(t in title_lower for t in query_tokens):
+            if any(t in title_lower or stem(t) in title_lower for t in query_tokens):
                 score += 0.5
 
             results.append({
@@ -154,7 +175,6 @@ def check_language_compliance(text: str, lang_code: str) -> Tuple[bool, str]:
     Validates whether the model adhered to English vs Nepali Devanagari rules.
     """
     has_devanagari = bool(re.search(r'[\u0900-\u097F]', text))
-    # Count latin letters
     latin_letters = len(re.findall(r'[a-zA-Z]', text))
     
     if lang_code == '0':  # Nepali required
@@ -221,10 +241,30 @@ def diagnose_trace_heuristic(trace: Dict[str, Any]) -> Dict[str, Any]:
     has_retrieved_chunks = len(retrieved_chunks) > 0
     total_retrieval_score = sum(c.get('score', 0.0) for c in retrieved_chunks)
     
+    query_tokens = corpus_scanner.tokenize(user_query)
+    retrieved_texts = " ".join([c.get('content', '') + " " + c.get('title', '') for c in retrieved_chunks])
+
+    # Common domain words that appear across almost all Sunway documents
+    GENERIC_DOMAIN_WORDS = frozenset({'sunway', 'college', 'kathmandu', 'nepal', 'bcu', 'birmingham', 'university'})
+    distinctive_query_tokens = [t for t in query_tokens if t not in GENERIC_DOMAIN_WORDS]
+    if not distinctive_query_tokens:
+        distinctive_query_tokens = query_tokens
+
     # Check what the full corpus scanner finds
     corpus_matches = corpus_scanner.scan_for_query(user_query)
-    best_corpus_match = corpus_matches[0] if corpus_matches else None
-    corpus_has_answer = best_corpus_match is not None and best_corpus_match['score'] >= 0.4
+    # Check if any corpus section matches the distinctive query terms
+    best_corpus_match = None
+    corpus_has_distinctive = False
+    if corpus_matches:
+        min_required = max(1, min(2, len(distinctive_query_tokens)))
+        for m in corpus_matches:
+            matched_distinctive = [t for t in distinctive_query_tokens if t in m['matched_terms'] or stem(t) in [stem(x) for x in m['matched_terms']]]
+            if len(matched_distinctive) >= min_required and m['score'] >= 0.4:
+                best_corpus_match = m
+                corpus_has_distinctive = True
+                break
+        if not best_corpus_match:
+            best_corpus_match = corpus_matches[0]
 
     is_refusal = is_refusal_response(model_response, lang_code)
 
@@ -232,64 +272,55 @@ def diagnose_trace_heuristic(trace: Dict[str, Any]) -> Dict[str, Any]:
 
     # Case A: Model refused to answer
     if is_refusal:
-        # Check if the retrieved context actually contained information
-        retrieved_texts = " ".join([c.get('content', '') for c in retrieved_chunks]).lower()
-        query_tokens = corpus_scanner.tokenize(user_query)
-        matching_retrieved = [t for t in query_tokens if t in retrieved_texts]
-        
-        # If retrieved context actually had high overlap with query
-        if len(matching_retrieved) >= max(1, len(query_tokens) * 0.6):
+        # If distinctive tokens do not exist anywhere in the corpus, it's a DATA GAP
+        if not corpus_has_distinctive:
+            return {
+                'verdict': 'DATA_ISSUE',
+                'confidence': 0.95,
+                'reason': f"The query asks about '{', '.join(distinctive_query_tokens[:3])}', which does not exist anywhere in the 'data/' knowledge base. The model correctly refused, exposing a data gap.",
+                'suggested_fix': f"Add documentation covering this topic into 'data/' (e.g. update AboutUs.md with '{', '.join(distinctive_query_tokens[:3])}' details).",
+                'details': {
+                    'issue_type': 'missing_corpus_data',
+                    'distinctive_query_tokens': distinctive_query_tokens
+                }
+            }
+
+        # The corpus DOES have this knowledge. Check if the retriever actually included it.
+        retrieved_matched_distinctive = tokens_overlap(distinctive_query_tokens, retrieved_texts)
+        if len(retrieved_matched_distinctive) >= max(1, len(distinctive_query_tokens) * 0.5):
             return {
                 'verdict': 'MODEL_ISSUE',
-                'confidence': 0.85,
-                'reason': "Model falsely refused to answer even though relevant context was present in the prompt (False Refusal).",
-                'suggested_fix': "Refine system prompt to instruct model not to be overly defensive when context mentions the query topics.",
+                'confidence': 0.88,
+                'reason': f"Model falsely refused to answer even though relevant context for '{', '.join(retrieved_matched_distinctive)}' was provided in the prompt (False Refusal).",
+                'suggested_fix': "Refine system prompt to instruct model not to refuse when context mentions the requested facts.",
                 'details': {
                     'issue_type': 'false_refusal',
                     'retrieved_chunks_count': len(retrieved_chunks),
-                    'query_tokens_in_context': matching_retrieved
+                    'matched_tokens': retrieved_matched_distinctive
                 }
             }
-        
-        # If retriever failed to bring chunks, BUT the corpus DOES have it
-        if corpus_has_answer:
+        else:
             return {
                 'verdict': 'RETRIEVAL_ISSUE',
-                'confidence': 0.90,
-                'reason': f"The knowledge exists in '{best_corpus_match['source']}' section '{best_corpus_match['title']}', but PageIndex keyword search failed to retrieve it (score was 0 or ranked outside top-3).",
-                'suggested_fix': f"Enhance PageIndex: add synonym expansion, Devanagari support, or semantic embeddings so '{user_query}' matches '{best_corpus_match['title']}'.",
+                'confidence': 0.92,
+                'reason': f"The knowledge exists in '{best_corpus_match['source']}' (section '{best_corpus_match['title']}'), but PageIndex failed to retrieve it (score was 0 or ranked outside top-3).",
+                'suggested_fix': f"Enhance PageIndex: add keyword expansion or synonym matching so '{user_query}' retrieves section '{best_corpus_match['title']}'.",
                 'details': {
                     'issue_type': 'retrieval_miss',
                     'missed_source': best_corpus_match['source'],
                     'missed_section': best_corpus_match['title'],
-                    'corpus_match_score': best_corpus_match['score'],
-                    'corpus_snippet': best_corpus_match['content'][:200]
+                    'corpus_match_score': best_corpus_match['score']
                 }
             }
 
-        # If knowledge is NOT in corpus at all, model refusal is appropriate!
-        return {
-            'verdict': 'DATA_ISSUE',
-            'confidence': 0.90,
-            'reason': "The user's query asks about information that does not exist in any file in the 'data/' knowledge base. The model correctly refused, but there is a knowledge gap in your data.",
-            'suggested_fix': f"Add documentation covering this topic into 'data/' (e.g. create or update AboutUs.md / programs info).",
-            'details': {
-                'issue_type': 'missing_corpus_data',
-                'query': user_query,
-                'top_corpus_score': best_corpus_match['score'] if best_corpus_match else 0.0
-            }
-        }
-
     # Case B: Model answered (did not refuse)
-    # Check groundedness
-    if not has_retrieved_chunks:
-        # Model answered without any retrieved context!
+    if not has_retrieved_chunks or total_retrieval_score == 0:
         if corpus_has_answer:
             return {
                 'verdict': 'RETRIEVAL_ISSUE',
                 'confidence': 0.80,
-                'reason': "Model answered, but retrieval returned 0 chunks. The model relied on outside pre-training knowledge instead of grounded context from data/.",
-                'suggested_fix': f"Improve retriever tokenization/indexing so queries like '{user_query}' retrieve '{best_corpus_match['source']}'.",
+                'reason': "Model answered, but retrieval returned 0 chunks. The model relied on outside pre-training knowledge instead of grounded context.",
+                'suggested_fix': f"Improve retriever indexing so query '{user_query}' retrieves '{best_corpus_match['source']}'.",
                 'details': {
                     'issue_type': 'retrieval_zero_hit',
                     'best_corpus_source': best_corpus_match['source']
@@ -299,37 +330,36 @@ def diagnose_trace_heuristic(trace: Dict[str, Any]) -> Dict[str, Any]:
             return {
                 'verdict': 'MODEL_ISSUE',
                 'confidence': 0.90,
-                'reason': "Model hallucinated an answer using outside pre-training knowledge when 0 context was retrieved and the data doesn't exist in data/ (Strict Knowledge Rule violated).",
-                'suggested_fix': "Instruct the LLM with higher penalty on hallucination and lower temperature (0.2).",
+                'reason': "Model hallucinated an answer using outside pre-training knowledge when 0 context was retrieved and data doesn't exist in data/ (Knowledge Rule violated).",
+                'suggested_fix': "Instruct the LLM with higher penalty on hallucination and lower temperature.",
                 'details': {
                     'issue_type': 'hallucination_outside_knowledge'
                 }
             }
 
-    # Case C: Chunks were retrieved and model answered
-    # Let's verify whether the retrieved chunks actually match the query
-    retrieved_texts = " ".join([c.get('content', '') for c in retrieved_chunks]).lower()
-    query_tokens = corpus_scanner.tokenize(user_query)
-    matching_tokens = [t for t in query_tokens if t in retrieved_texts]
-    retrieval_relevance = len(matching_tokens) / max(1, len(query_tokens))
+    # Case C: Context retrieved and model answered
+    # Check if the model answer contains facts supported by retrieved chunks
+    response_words = set(re.findall(r'[a-zA-Z0-9\u0900-\u097F]+', model_response.lower()))
+    retrieved_words = set(re.findall(r'[a-zA-Z0-9\u0900-\u097F]+', retrieved_texts.lower()))
+    
+    # Overlap between model answer and retrieved context
+    grounding_overlap = len(response_words.intersection(retrieved_words)) / max(1, len(response_words))
 
-    if retrieval_relevance < 0.2 and corpus_has_answer:
+    if grounding_overlap < 0.15 and not corpus_has_answer:
         return {
-            'verdict': 'RETRIEVAL_ISSUE',
+            'verdict': 'MODEL_ISSUE',
             'confidence': 0.85,
-            'reason': f"Retrieved chunks appear irrelevant to the query, while section '{best_corpus_match['title']}' in '{best_corpus_match['source']}' is a much better match.",
-            'suggested_fix': f"Adjust retriever scoring and query token filtering to prioritize '{best_corpus_match['title']}'.",
+            'reason': "Model response does not appear grounded in the retrieved context (potential hallucination).",
+            'suggested_fix': "Instruct the model to cite or directly extract answers from the provided context.",
             'details': {
-                'issue_type': 'irrelevant_retrieval',
-                'better_source': best_corpus_match['source'],
-                'better_section': best_corpus_match['title']
+                'issue_type': 'unsupported_generation',
+                'grounding_overlap': round(grounding_overlap, 2)
             }
         }
 
-    # If context is relevant and model answered concisely
     return {
         'verdict': 'SUCCESS',
-        'confidence': 0.88,
+        'confidence': 0.90,
         'reason': "Context was properly retrieved from knowledge base, and model provided a grounded response complying with instructions.",
         'suggested_fix': "No fix needed. Pipeline operated as expected.",
         'details': {
