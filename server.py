@@ -15,9 +15,25 @@ import queue
 import wave
 from collections import Counter
 
+import time
+import uuid
 import requests
 from flask import Flask, request, send_from_directory, Response, jsonify
 from flask_cors import CORS
+
+from eval.tracker import (
+    log_chat_interaction,
+    update_trace_response,
+    get_trace,
+    get_traces,
+    get_statistics,
+    update_human_feedback,
+    export_traces_data
+)
+from eval.evaluator import (
+    evaluate_trace,
+    evaluate_all_pending
+)
 
 app = Flask(__name__, static_folder='.', static_url_path='')
 CORS(app)
@@ -135,7 +151,7 @@ class PageIndex:
         clean = re.sub(r'[#*_\[\]()>`|~\-]', ' ', text)
         clean = re.sub(r'https?://\S+', '', clean)       # remove URLs
         clean = re.sub(r'\S+@\S+', '', clean)             # remove emails
-        clean = re.sub(r'[^a-zA-Z0-9\s]', ' ', clean)    # keep alphanumeric
+        clean = re.sub(r'[^a-zA-Z0-9\u0900-\u097F\s]', ' ', clean)    # keep alphanumeric and Devanagari
         tokens = clean.lower().split()
         # Filter stop words and very short tokens
         meaningful = [t for t in tokens if t not in self.STOP_WORDS and len(t) > 1]
@@ -154,14 +170,13 @@ class PageIndex:
             for term, freq in doc_freq.items()
         }
 
-    def search(self, query: str, top_k: int = 3) -> list:
-        """Find the top-K most relevant pages for the query."""
+    def search_with_scores(self, query: str, top_k: int = 3) -> list:
+        """Find the top-K most relevant pages for query and return [(score, page)]."""
         if not self.pages:
             return []
 
         query_tokens = self._extract_keywords(query)
         if not query_tokens:
-            # If no meaningful keywords, return all pages (for greetings etc.)
             return []
 
         scored = []
@@ -176,7 +191,12 @@ class PageIndex:
                 scored.append((score, page))
 
         scored.sort(key=lambda x: x[0], reverse=True)
-        return [page for _, page in scored[:top_k]]
+        return scored[:top_k]
+
+    def search(self, query: str, top_k: int = 3) -> list:
+        """Find the top-K most relevant pages for the query."""
+        scored = self.search_with_scores(query, top_k)
+        return [page for _, page in scored]
 
 
 # ─── Initialize the page index on startup ───
@@ -454,11 +474,12 @@ def api_language():
     })
 
 
-# ─── NEW: Chat endpoint with page-index RAG ───
+# ─── NEW: Chat endpoint with page-index RAG (Supports streaming & non-streaming) ───
 @app.route('/api/chat', methods=['POST'])
 def api_chat():
     data = request.get_json(silent=True) or {}
     user_message = data.get('message', '').strip()
+    stream_requested = bool(data.get('stream', False))
     if not user_message:
         return jsonify({'error': 'No message provided'}), 400
 
@@ -477,6 +498,18 @@ def api_chat():
             confirmation = "Sure, I will speak in English from now on. How can I help you today?"
         else:
             confirmation = "हुन्छ, अबदेखि म नेपालीमा बोल्नेछु। म तपाईंलाई कसरी मद्दत गर्न सक्छु?"
+
+        if stream_requested:
+            def switch_stream():
+                yield f"data: {json.dumps({'type': 'start', 'lang': lang_iso, 'language': active_lang_code})}\n\n"
+                yield f"data: {json.dumps({'type': 'chunk', 'content': confirmation})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'response': confirmation, 'lang': lang_iso, 'language': active_lang_code})}\n\n"
+            return Response(switch_stream(), mimetype='text/event-stream', headers={
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no',
+                'Connection': 'keep-alive',
+            })
+
         return jsonify({
             'response': confirmation,
             'lang': lang_iso,
@@ -486,29 +519,73 @@ def api_chat():
     # 3. Build context-aware system prompt for the active language
     system_prompt = build_system_prompt(user_message, active_lang_code)
 
-    try:
-        ollama_payload = {
-            'model': MODEL,
-            'messages': [
-                {'role': 'system', 'content': system_prompt},
-                {'role': 'user', 'content': user_message},
-            ],
-            'think': False,
-            'stream': False,
-            'keep_alive': -1,  # Keep model in GPU VRAM permanently (eliminates 13s reload delay)
-            'options': {
-                'temperature': 0.7,
-                'num_predict': 180,
-                'num_ctx': 2048,
-            }
+    ollama_payload = {
+        'model': MODEL,
+        'messages': [
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': user_message},
+        ],
+        'think': False,
+        'stream': stream_requested,
+        'keep_alive': -1,  # Keep model in GPU VRAM permanently (eliminates reload delay)
+        'options': {
+            'temperature': 0.7,
+            'num_predict': 180,
+            'num_ctx': 2048,
         }
+    }
 
+    if stream_requested:
+        def stream_chat():
+            # Send initial metadata
+            yield f"data: {json.dumps({'type': 'start', 'lang': lang_iso, 'language': active_lang_code})}\n\n"
+            full_response_parts = []
+            try:
+                res = requests.post(OLLAMA_URL, json=ollama_payload, stream=True, timeout=60)
+                res.raise_for_status()
+                for line in res.iter_lines():
+                    if not line:
+                        continue
+                    try:
+                        line_str = line.decode('utf-8') if isinstance(line, bytes) else line
+                        chunk = json.loads(line_str)
+                    except Exception:
+                        continue
+
+                    content = chunk.get('message', {}).get('content', '')
+                    if content:
+                        full_response_parts.append(content)
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': content})}\n\n"
+
+                    if chunk.get('done', False):
+                        break
+
+                full_text = "".join(full_response_parts).strip()
+                # Clean any lingering think/html tags
+                full_text = re.sub(r'<think>[\s\S]*?</think>', '', full_text).strip()
+                full_text = re.sub(r'<[^>]+>', '', full_text).strip()
+                if not full_text:
+                    full_text = "I didn't quite get that." if active_lang_code == '1' else "मैले बुझिन, कृपया फेरि भन्नुहोस्।"
+                yield f"data: {json.dumps({'type': 'done', 'response': full_text, 'lang': lang_iso, 'language': active_lang_code})}\n\n"
+
+            except Exception as e:
+                print(f"Ollama stream error: {e}")
+                err_msg = "Cannot reach Ollama. Make sure it's running." if "ConnectionError" in str(e) else f"Error: {e}"
+                yield f"data: {json.dumps({'type': 'error', 'error': err_msg})}\n\n"
+
+        return Response(stream_chat(), mimetype='text/event-stream', headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+            'Connection': 'keep-alive',
+        })
+
+    # Non-streaming fallback
+    try:
         res = requests.post(OLLAMA_URL, json=ollama_payload, timeout=60)
         res.raise_for_status()
         result = res.json()
 
         response_text = result.get('message', {}).get('content', "I didn't quite get that.")
-        # Clean up any think tags or HTML
         response_text = re.sub(r'<think>[\s\S]*?</think>', '', response_text).strip()
         response_text = re.sub(r'<[^>]+>', '', response_text).strip()
         response_text = re.sub(r'\s+', ' ', response_text).strip()

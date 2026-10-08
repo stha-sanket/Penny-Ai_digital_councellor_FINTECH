@@ -595,9 +595,15 @@
 
   <!-- Top Navigation -->
   <div class="top-bar">
+    <a href="index.html" class="back-btn" id="backBtn" title="Back to Face">
+      <svg viewBox="0 0 24 24">
+        <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
+      </svg>
+      <span>Penny</span>
+    </a>
     <span class="top-bar-title">Penny — Chat & Voice</span>
     <div style="display: flex; align-items: center; gap: 14px;">
-      <button class="lang-badge" id="langBadge" title="Click to toggle English / Nepali" onclick="toggleLanguage()">
+      <button class="lang-badge" id="langBadge" title="Click to toggle English / Nepali">
         <span class="lang-tag" id="langTag">EN</span>
         <span class="lang-name" id="langName">English</span>
       </button>
@@ -747,11 +753,18 @@
       }
     }
 
-    // ─── BroadcastChannel — send state to face page ───
+    // ─── BroadcastChannel & Server State Sync ───
     const channel = new BroadcastChannel('penny-state');
 
     function broadcastState(state) {
-      channel.postMessage({ state });
+      try { channel.postMessage({ state }); } catch (e) {}
+      try {
+        fetch('/api/state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ state })
+        }).catch(() => {});
+      } catch (e) {}
     }
 
     // ─── Speech Recognition Setup ───
@@ -804,12 +817,25 @@
       };
     }
 
+    // ─── Language Badge Button ───
+    const langBadge = document.getElementById('langBadge');
+    if (langBadge) {
+      langBadge.addEventListener('click', toggleLanguage);
+    }
+
     // ─── Mic Button ───
     micBtn.addEventListener('click', () => {
-      if (isProcessing || isSpeaking) return;
+      if (isProcessing) return;
+
+      if (isSpeaking) {
+        stopSpeaking();
+      }
 
       if (isListening) {
-        recognition.stop();
+        stopListening();
+        if (recognition) {
+          try { recognition.stop(); } catch (e) {}
+        }
       } else {
         startListening();
       }
@@ -827,7 +853,10 @@
 
     function sendTextMessage() {
       const text = textInput.value.trim();
-      if (!text || isProcessing || isSpeaking) return;
+      if (!text || isProcessing) return;
+      if (isSpeaking) {
+        stopSpeaking();
+      }
       textInput.value = '';
       handleUserMessage(text);
     }
@@ -838,9 +867,7 @@
         setStatus('speech recognition not supported in this browser', '');
         return;
       }
-      // Stop any ongoing speech
-      synthesis.cancel();
-      isSpeaking = false;
+      stopSpeaking();
 
       try {
         recognition.start();
@@ -858,68 +885,7 @@
       }
     }
 
-    // ─── Handle User Message ───
-    async function handleUserMessage(text) {
-      // Remove welcome message on first interaction
-      if (!hasFirstMessage && welcomeMessage) {
-        welcomeMessage.style.animation = 'fadeOut 0.3s ease forwards';
-        setTimeout(() => welcomeMessage.remove(), 300);
-        hasFirstMessage = true;
-      }
-
-      addMessage(text, 'user');
-      setStatus('thinking...', 'active');
-      isProcessing = true;
-      broadcastState('thinking');
-
-      // Add "thinking" bubble
-      const thinkingEl = addMessage('', 'bot', true);
-
-      try {
-        const result = await queryOllama(text);
-        thinkingEl.remove();
-
-        const responseText = (typeof result === 'object' && result.response) ? result.response : (result || "I didn't quite get that.");
-        const responseLang = (typeof result === 'object' && result.lang) ? result.lang : currentLang;
-
-        addMessage(responseText, 'bot');
-        isProcessing = false;
-        speakResponse(responseText, responseLang);
-      } catch (err) {
-        thinkingEl.remove();
-        isProcessing = false;
-        const errorMsg = err.message.includes('Failed to fetch')
-          ? 'Cannot reach Ollama. Make sure it\'s running on localhost:11434'
-          : 'Something went wrong: ' + err.message;
-        addMessage(errorMsg, 'bot');
-        setStatus('error — check ollama', '');
-        broadcastState('idle');
-      }
-    }
-
-    // ─── Chat API (server-side page-index RAG) ───
-    async function queryOllama(prompt) {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: prompt })
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `Server returned ${res.status}`);
-      }
-
-      const data = await res.json();
-      if (data && data.language) {
-        updateLanguageUI(data.language, data.lang);
-      }
-      return data;
-    }
-
-    // ─── Text to Speech (Local Piper ONNX with active voice) ───
-    const synthesis = window.speechSynthesis;
-
+    // ─── Language Detection Helper ───
     function hasNepali(text) {
       if (/[\u0900-\u097F]/.test(text)) return true;
       const lower = text.toLowerCase();
@@ -935,46 +901,52 @@
       return matches.length >= 2;
     }
 
-    function speakResponse(text, lang) {
-      voiceVisualizer.classList.add('active');
-      voiceVisualizer.classList.remove('listening');
-      speakWithServerTTS(text, lang);
+    // ─── Audio Playback & Synchronization Queue ───
+    const synthesis = window.speechSynthesis;
+    let audioQueue = [];
+    let isPlayingQueue = false;
+    let activeAudio = null;
+    let activeWordTimer = null;
+    let currentChatAbort = null;
+    let isStreamDone = false;
+
+    function findSentenceBoundary(text) {
+      // Primary sentence endings: . ! ? \n or Nepali । (U+0964)
+      const majorMatch = text.match(/([.!?\n\u0964]+)(\s+|$)/);
+      if (majorMatch && majorMatch.index !== undefined) {
+        const end = majorMatch.index + majorMatch[1].length;
+        return {
+          sentence: text.slice(0, end).trim(),
+          rest: text.slice(end).trimStart()
+        };
+      }
+      // Natural clause breaks (, ; : —) if we already have >= 6 words
+      const words = text.trim().split(/\s+/);
+      if (words.length >= 6) {
+        const clauseMatch = text.match(/([,;:—]+)(\s+)/);
+        if (clauseMatch && clauseMatch.index !== undefined) {
+          const end = clauseMatch.index + clauseMatch[1].length;
+          return {
+            sentence: text.slice(0, end).trim(),
+            rest: text.slice(end).trimStart()
+          };
+        }
+      }
+      // Safety threshold: break after >= 12 words at last space so voice starts promptly
+      if (words.length >= 12) {
+        const lastSpace = text.lastIndexOf(' ');
+        if (lastSpace > 15) {
+          return {
+            sentence: text.slice(0, lastSpace).trim(),
+            rest: text.slice(lastSpace).trimStart()
+          };
+        }
+      }
+      return null;
     }
 
-    function speakWithBrowser(text, lang) {
-      synthesis.cancel();
-      isSpeaking = true;
-      setStatus('speaking...', 'speaking');
-      broadcastState('speaking');
-
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
-
-      const voices = synthesis.getVoices();
-      const isNe = (lang === 'ne' || hasNepali(text));
-      const preferred = isNe
-        ? (voices.find(v => v.lang.startsWith('ne')) || voices.find(v => v.lang.startsWith('hi')))
-        : (voices.find(v => v.name.includes('Google') && v.lang.startsWith('en'))
-          || voices.find(v => v.lang.startsWith('en-US'))
-          || voices.find(v => v.lang.startsWith('en'));
-
-      if (preferred) utterance.voice = preferred;
-
-      utterance.onend = () => stopSpeaking();
-      utterance.onerror = () => stopSpeaking();
-      synthesis.speak(utterance);
-    }
-
-    let currentAudio = null;
-    async function speakWithServerTTS(text, lang) {
-      if (currentAudio) { currentAudio.pause(); currentAudio = null; }
-
-      isSpeaking = true;
+    async function fetchTTSAudio(text, lang) {
       const targetLang = lang || (hasNepali(text) ? 'ne' : currentLang);
-      setStatus(`speaking (${targetLang === 'ne' ? 'nepali' : 'english'})...`, 'speaking');
-      broadcastState('speaking');
-
       try {
         const res = await fetch('/api/tts', {
           method: 'POST',
@@ -986,25 +958,377 @@
         const audioBlob = await res.blob();
         const audioUrl = URL.createObjectURL(audioBlob);
         const audio = new Audio(audioUrl);
-        currentAudio = audio;
-
-        audio.onended = () => { stopSpeaking(); URL.revokeObjectURL(audioUrl); currentAudio = null; };
-        audio.onerror = () => { stopSpeaking(); URL.revokeObjectURL(audioUrl); currentAudio = null; };
-        await audio.play();
+        audio.preload = 'auto';
+        return { text, audio, audioUrl, lang: targetLang };
       } catch (err) {
         console.warn('Server ONNX TTS error, falling back to browser synthesis:', err);
-        speakWithBrowser(text, targetLang);
+        return { text, browserFallback: true, lang: targetLang };
       }
     }
 
-    function stopSpeaking() {
+    function enqueueSentence(sentence, lang, contentEl, timestampEl) {
+      if (!sentence) return;
+      const audioPromise = fetchTTSAudio(sentence, lang);
+      audioQueue.push({ text: sentence, audioPromise });
+      processAudioQueue(contentEl, timestampEl);
+    }
+
+    async function processAudioQueue(contentEl, timestampEl) {
+      if (isPlayingQueue) return;
+      if (audioQueue.length === 0) {
+        if (isStreamDone) {
+          finishSpeaking();
+        }
+        return;
+      }
+
+      isPlayingQueue = true;
+      const item = audioQueue.shift();
+
+      try {
+        const audioData = await item.audioPromise;
+        if (!isPlayingQueue) return; // cancelled or interrupted
+
+        // Clear thinking placeholder on the first chunk
+        if (contentEl && contentEl.classList.contains('typing-dots')) {
+          contentEl.classList.remove('typing-dots');
+          contentEl.textContent = '';
+          if (timestampEl) timestampEl.style.display = 'block';
+        }
+
+        if (audioData.audio) {
+          await playAudioChunkWithWordSync(audioData, contentEl);
+        } else if (audioData.browserFallback) {
+          await playBrowserChunkWithWordSync(audioData.text, audioData.lang, contentEl);
+        }
+      } catch (err) {
+        console.error('Error in audio playback queue:', err);
+        if (contentEl && contentEl.classList.contains('typing-dots')) {
+          contentEl.classList.remove('typing-dots');
+          contentEl.textContent = '';
+          if (timestampEl) timestampEl.style.display = 'block';
+        }
+        if (contentEl) {
+          contentEl.textContent += (contentEl.textContent ? ' ' : '') + item.text;
+        }
+      }
+
+      isPlayingQueue = false;
+      processAudioQueue(contentEl, timestampEl);
+    }
+
+    function playAudioChunkWithWordSync(audioData, contentEl) {
+      return new Promise((resolve) => {
+        const audio = audioData.audio;
+        activeAudio = audio;
+
+        // Split text into tokens including whitespace so spacing is preserved
+        const tokens = audioData.text.match(/\S+\s*/g) || [audioData.text];
+        let tokenIndex = 0;
+        let wordTimer = null;
+
+        function startWordTyping() {
+          if (wordTimer) return;
+          const dur = (audio.duration && !isNaN(audio.duration) && isFinite(audio.duration)) ? audio.duration : (tokens.length * 0.32);
+          const totalMs = Math.max(dur * 1000, 300);
+          const intervalMs = Math.max(Math.floor(totalMs / tokens.length), 35);
+
+          if (contentEl && contentEl.textContent && !/\s$/.test(contentEl.textContent)) {
+            contentEl.textContent += ' ';
+          }
+
+          wordTimer = setInterval(() => {
+            if (tokenIndex < tokens.length) {
+              if (contentEl) contentEl.textContent += tokens[tokenIndex];
+              tokenIndex++;
+              chatMessages.scrollTop = chatMessages.scrollHeight;
+            } else {
+              clearInterval(wordTimer);
+              wordTimer = null;
+            }
+          }, intervalMs);
+          activeWordTimer = wordTimer;
+        }
+
+        audio.onplay = () => {
+          isSpeaking = true;
+          const langDisplay = audioData.lang === 'ne' ? 'nepali' : 'english';
+          setStatus(`speaking (${langDisplay})...`, 'speaking');
+          voiceVisualizer.classList.add('active');
+          voiceVisualizer.classList.remove('listening');
+          broadcastState('speaking');
+          startWordTyping();
+        };
+
+        function onComplete() {
+          if (wordTimer) {
+            clearInterval(wordTimer);
+            wordTimer = null;
+          }
+          activeWordTimer = null;
+          while (tokenIndex < tokens.length) {
+            if (contentEl) contentEl.textContent += tokens[tokenIndex];
+            tokenIndex++;
+          }
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+          if (audioData.audioUrl) {
+            URL.revokeObjectURL(audioData.audioUrl);
+          }
+          activeAudio = null;
+          resolve();
+        }
+
+        audio.onended = onComplete;
+        audio.onerror = (e) => {
+          console.warn('Audio playback error:', e);
+          onComplete();
+        };
+
+        audio.play().catch((err) => {
+          console.warn('Audio play() failed, falling back:', err);
+          onComplete();
+        });
+      });
+    }
+
+    function playBrowserChunkWithWordSync(text, lang, contentEl) {
+      return new Promise((resolve) => {
+        synthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+
+        const voices = synthesis.getVoices();
+        const isNe = (lang === 'ne' || hasNepali(text));
+        const preferred = isNe
+          ? (voices.find(v => v.lang.startsWith('ne')) || voices.find(v => v.lang.startsWith('hi')))
+          : (voices.find(v => v.name.includes('Google') && v.lang.startsWith('en'))
+            || voices.find(v => v.lang.startsWith('en-US'))
+            || voices.find(v => v.lang.startsWith('en')));
+        if (preferred) utterance.voice = preferred;
+
+        const tokens = text.match(/\S+\s*/g) || [text];
+        let tokenIndex = 0;
+        let wordTimer = null;
+
+        if (contentEl && contentEl.textContent && !/\s$/.test(contentEl.textContent)) {
+          contentEl.textContent += ' ';
+        }
+
+        function revealNextWord() {
+          if (tokenIndex < tokens.length) {
+            if (contentEl) contentEl.textContent += tokens[tokenIndex];
+            tokenIndex++;
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+          }
+        }
+
+        utterance.onstart = () => {
+          isSpeaking = true;
+          setStatus(`speaking (${lang === 'ne' ? 'nepali' : 'english'})...`, 'speaking');
+          voiceVisualizer.classList.add('active');
+          voiceVisualizer.classList.remove('listening');
+          broadcastState('speaking');
+
+          const estDurationMs = Math.max(tokens.length * 320, 350);
+          const intervalMs = Math.max(Math.floor(estDurationMs / tokens.length), 40);
+          wordTimer = setInterval(() => {
+            if (tokenIndex < tokens.length) {
+              revealNextWord();
+            } else {
+              clearInterval(wordTimer);
+              wordTimer = null;
+            }
+          }, intervalMs);
+          activeWordTimer = wordTimer;
+        };
+
+        function onComplete() {
+          if (wordTimer) {
+            clearInterval(wordTimer);
+            wordTimer = null;
+          }
+          activeWordTimer = null;
+          while (tokenIndex < tokens.length) {
+            revealNextWord();
+          }
+          resolve();
+        }
+
+        utterance.onend = onComplete;
+        utterance.onerror = onComplete;
+        synthesis.speak(utterance);
+      });
+    }
+
+    function finishSpeaking() {
+      if (activeWordTimer) {
+        clearInterval(activeWordTimer);
+        activeWordTimer = null;
+      }
       isSpeaking = false;
-      voiceVisualizer.classList.remove('active');
+      isProcessing = false;
+      voiceVisualizer.classList.remove('active', 'listening');
+      setStatus('tap the mic or type to talk', '');
+      broadcastState('idle');
+    }
+
+    function stopSpeaking() {
+      if (currentChatAbort) {
+        try { currentChatAbort.abort(); } catch (e) {}
+        currentChatAbort = null;
+      }
+      if (activeWordTimer) {
+        clearInterval(activeWordTimer);
+        activeWordTimer = null;
+      }
+      if (activeAudio) {
+        try {
+          activeAudio.pause();
+          activeAudio.currentTime = 0;
+        } catch (e) {}
+        activeAudio = null;
+      }
+      while (audioQueue.length > 0) {
+        const item = audioQueue.pop();
+        if (item && item.audioUrl) {
+          try { URL.revokeObjectURL(item.audioUrl); } catch (e) {}
+        }
+      }
+      isPlayingQueue = false;
+      isStreamDone = false;
+      synthesis.cancel();
+      isSpeaking = false;
+      isProcessing = false;
+      voiceVisualizer.classList.remove('active', 'listening');
       setStatus('tap the mic or type to talk', '');
       broadcastState('idle');
     }
 
     synthesis.onvoiceschanged = () => synthesis.getVoices();
+
+    // ─── Handle User Message ───
+    async function handleUserMessage(text) {
+      if (!hasFirstMessage && welcomeMessage) {
+        welcomeMessage.style.animation = 'fadeOut 0.3s ease forwards';
+        setTimeout(() => welcomeMessage.remove(), 300);
+        hasFirstMessage = true;
+      }
+
+      stopSpeaking();
+
+      addMessage(text, 'user');
+      setStatus('thinking...', 'active');
+      isProcessing = true;
+      broadcastState('thinking');
+
+      const botMsg = addMessage('', 'bot', true);
+      const contentEl = botMsg.contentEl;
+      const timestampEl = botMsg.timestampEl;
+
+      currentChatAbort = new AbortController();
+      let streamBuffer = '';
+      isStreamDone = false;
+      let detectedLang = currentLang;
+
+      function flushSentences(isFinal = false) {
+        while (true) {
+          const boundary = findSentenceBoundary(streamBuffer);
+          if (boundary && boundary.sentence) {
+            streamBuffer = boundary.rest;
+            enqueueSentence(boundary.sentence, detectedLang, contentEl, timestampEl);
+          } else {
+            break;
+          }
+        }
+        if (isFinal && streamBuffer.trim()) {
+          enqueueSentence(streamBuffer.trim(), detectedLang, contentEl, timestampEl);
+          streamBuffer = '';
+        }
+      }
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: text, stream: true }),
+          signal: currentChatAbort.signal
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `Server returned ${res.status}`);
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let sseBuffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          sseBuffer += decoder.decode(value, { stream: true });
+          const blocks = sseBuffer.split('\n\n');
+          sseBuffer = blocks.pop() || '';
+
+          for (const block of blocks) {
+            const trimmed = block.trim();
+            if (!trimmed.startsWith('data:')) continue;
+            const jsonStr = trimmed.slice(5).trim();
+            if (!jsonStr) continue;
+
+            try {
+              const event = JSON.parse(jsonStr);
+              if (event.type === 'start') {
+                if (event.language) updateLanguageUI(event.language, event.lang);
+                if (event.lang) detectedLang = event.lang;
+              } else if (event.type === 'chunk' && event.content) {
+                streamBuffer += event.content;
+                flushSentences(false);
+              } else if (event.type === 'done') {
+                if (event.language) updateLanguageUI(event.language, event.lang);
+                if (event.lang) detectedLang = event.lang;
+                isStreamDone = true;
+                flushSentences(true);
+              } else if (event.type === 'error') {
+                throw new Error(event.error);
+              }
+            } catch (jsonErr) {
+              console.warn('SSE JSON parse error:', jsonErr);
+            }
+          }
+        }
+
+        isStreamDone = true;
+        flushSentences(true);
+
+        // If audio queue was empty and nothing was played (e.g. empty answer)
+        if (audioQueue.length === 0 && !isPlayingQueue) {
+          if (contentEl && contentEl.classList.contains('typing-dots')) {
+            contentEl.classList.remove('typing-dots');
+            contentEl.textContent = detectedLang === 'ne' ? 'मैले बुझिन, कृपया फेरि भन्नुहोस्।' : "I didn't quite get that.";
+            if (timestampEl) timestampEl.style.display = 'block';
+          }
+          finishSpeaking();
+        }
+
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        console.error('Chat stream error:', err);
+        isProcessing = false;
+        if (contentEl && contentEl.classList.contains('typing-dots')) {
+          contentEl.classList.remove('typing-dots');
+        }
+        const errorMsg = (err.message && err.message.includes('Failed to fetch'))
+          ? 'Cannot reach Penny server. Please ensure it is running.'
+          : (err.message || 'Something went wrong.');
+        if (contentEl) contentEl.textContent = errorMsg;
+        if (timestampEl) timestampEl.style.display = 'block';
+        setStatus('error — check connection', '');
+        broadcastState('idle');
+      }
+    }
 
     // ─── Chat UI ───
     function addMessage(text, sender, isThinking = false) {
@@ -1026,16 +1350,19 @@
       msg.appendChild(content);
 
       // Timestamp
-      if (!isThinking) {
-        const ts = document.createElement('div');
-        ts.className = 'timestamp';
-        ts.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        msg.appendChild(ts);
+      const ts = document.createElement('div');
+      ts.className = 'timestamp';
+      ts.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      if (isThinking) {
+        ts.style.display = 'none';
       }
+      msg.appendChild(ts);
 
       chatMessages.appendChild(msg);
       chatMessages.scrollTop = chatMessages.scrollHeight;
 
+      msg.contentEl = content;
+      msg.timestampEl = ts;
       return msg;
     }
 

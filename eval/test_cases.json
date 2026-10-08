@@ -1,0 +1,98 @@
+[
+  {
+    "id": "tc_01",
+    "query": "Where is Sunway College Kathmandu located?",
+    "lang": "1",
+    "expected_verdict": "SUCCESS",
+    "expected_source": "AboutUs.md",
+    "category": "direct_fact"
+  },
+  {
+    "id": "tc_02",
+    "query": "Which UK university is Sunway College partnering with?",
+    "lang": "1",
+    "expected_verdict": "SUCCESS",
+    "expected_source": "AboutUs.md",
+    "category": "direct_fact"
+  },
+  {
+    "id": "tc_03",
+    "query": "Can you name some of your placement partners?",
+    "lang": "1",
+    "expected_verdict": "SUCCESS",
+    "expected_source": "AboutUs.md",
+    "category": "direct_fact"
+  },
+  {
+    "id": "tc_04",
+    "query": "What is the contact number of the college?",
+    "lang": "1",
+    "expected_verdict": "SUCCESS",
+    "expected_source": "AboutUs.md",
+    "category": "direct_fact"
+  },
+  {
+    "id": "tc_05",
+    "query": "Tell me about the RAIN incubation center.",
+    "lang": "1",
+    "expected_verdict": "SUCCESS",
+    "expected_source": "Rain.md",
+    "category": "direct_fact"
+  },
+  {
+    "id": "tc_06",
+    "query": "What is the total semester fee for BSc AI?",
+    "lang": "1",
+    "expected_verdict": "DATA_ISSUE",
+    "expected_source": null,
+    "category": "missing_knowledge"
+  },
+  {
+    "id": "tc_07",
+    "query": "Does Sunway College provide a swimming pool and gym?",
+    "lang": "1",
+    "expected_verdict": "DATA_ISSUE",
+    "expected_source": null,
+    "category": "missing_knowledge"
+  },
+  {
+    "id": "tc_08",
+    "query": "Who is the bus driver for Route 5?",
+    "lang": "1",
+    "expected_verdict": "DATA_ISSUE",
+    "expected_source": null,
+    "category": "missing_knowledge"
+  },
+  {
+    "id": "tc_09",
+    "query": "Is Sundar Pichai on the Board of Directors of Sunway College?",
+    "lang": "1",
+    "expected_verdict": "DATA_ISSUE",
+    "expected_source": null,
+    "category": "hallucination_trap"
+  },
+  {
+    "id": "tc_10",
+    "query": "सनवे कलेज कहाँ छ?",
+    "lang": "0",
+    "expected_verdict": "SUCCESS",
+    "expected_source": "AboutUs.md",
+    "category": "nepali_query"
+  },
+  {
+    "id": "tc_11",
+    "query": "सनवे कलेजको फोन नम्बर कति हो?",
+    "lang": "0",
+    "expected_verdict": "SUCCESS",
+    "expected_source": "AboutUs.md",
+    "category": "nepali_query"
+  },
+  {
+    "id": "tc_12",
+    "query": "Who are the members of the Board of Directors?",
+    "lang": "1",
+    "expected_verdict": "SUCCESS",
+    "expected_source": "BODS.md",
+    "category": "direct_fact"
+  }
+]

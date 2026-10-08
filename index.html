@@ -276,11 +276,9 @@
     const glow = document.getElementById('ambientGlow');
     const particlesContainer = document.getElementById('particles');
 
-    // ─── BroadcastChannel — listen for state from chat page ───
-    const channel = new BroadcastChannel('penny-state');
-
-    channel.onmessage = (event) => {
-      const { state } = event.data;
+    // ─── State Management ───
+    function applyState(state) {
+      if (!state) return;
 
       // Clear all states first
       face.classList.remove('listening', 'happy');
@@ -308,7 +306,28 @@
           // All cleared above — back to default
           break;
       }
+    }
+
+    // ─── BroadcastChannel — instant local state from chat page ───
+    const channel = new BroadcastChannel('penny-state');
+    channel.onmessage = (event) => {
+      if (event.data && event.data.state) {
+        applyState(event.data.state);
+      }
     };
+
+    // ─── SSE — multi-device state synchronization from server ───
+    try {
+      const evtSource = new EventSource('/api/events');
+      evtSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.state) applyState(data.state);
+        } catch (e) {}
+      };
+    } catch (e) {
+      console.warn('SSE not connected:', e);
+    }
 
     // ─── Floating Particles ───
     function createParticle() {
