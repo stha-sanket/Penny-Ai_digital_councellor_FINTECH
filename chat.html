@@ -693,6 +693,7 @@
     let isProcessing = false;
     let recognition = null;
     let hasFirstMessage = false;
+    const sessionId = 'session_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
 
     // ─── Language State (1 = EN, 0 = NE) ───
     let currentLangCode = '1';
@@ -1254,7 +1255,7 @@
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, stream: true }),
+          body: JSON.stringify({ message: text, stream: true, session_id: sessionId }),
           signal: currentChatAbort.signal
         });
 
