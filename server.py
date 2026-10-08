@@ -13,7 +13,7 @@ import glob
 import json
 import queue
 import wave
-from collections import Counter
+from collections import Counter, deque
 
 import time
 import uuid
@@ -95,9 +95,29 @@ class PageIndex:
         'our', 'their', 'what', 'which', 'who', 'whom', 'these', 'those',
     ])
 
+    NE_STOP = frozenset(['के','हो','छ','छन्','छु','मा','को','का','की','ले','लाई','यो','त्यो',
+        'र','वा','पनि','भन','गर','बारे','तपाईं','मलाई','कृपया','हुन्','हुन्छ','कति','कहाँ','कसरी'])
+    NE_SUFFIXES = sorted(['हरूको','हरूमा','हरू','को','का','की','मा','ले','लाई','बाट',
+        'सँग','देखि','सम्म','भन्दा'], key=len, reverse=True)
+
+    def _ne_stem(self, t):
+        for suf in self.NE_SUFFIXES:
+            if t.endswith(suf) and len(t) - len(suf) >= 2:
+                return t[:-len(suf)]
+        return t
+
+    @staticmethod
+    def _en_stem(t):
+        if len(t) > 4 and t.endswith('ies'):
+            return t[:-3] + 'y'
+        if len(t) > 3 and t.endswith('s') and not t.endswith('ss'):
+            return t[:-1]
+        return t
+
     def __init__(self, data_dir: str):
         self.pages = []          # list of {source, title, content, keywords}
         self.idf = {}            # term → inverse document frequency
+        self.avgdl = 1.0
         self._load_and_index(data_dir)
 
     # ─── Load & split markdown files into pages ───
@@ -121,75 +141,77 @@ class PageIndex:
             print(f"   • [{p['source']}] {p['title']}")
 
     def _split_into_pages(self, text: str, source: str) -> list:
-        """Split markdown into pages by ## headers or --- separators."""
-        pages = []
-        # Split by ## headers or --- horizontal rules
-        sections = re.split(r'\n(?=#{1,3}\s)|(?:\n---\n)', text)
-
-        for section in sections:
-            section = section.strip()
-            if not section or len(section) < 10:
+        doc_title = source.replace('.md', '')
+        sections = re.split(r'\n(?=#{1,2}\s)', text)      # split only on # and ##
+        chunks, buf = [], ''
+        for s in sections:
+            s = s.strip()
+            if not s:
                 continue
-
-            # Extract title from first heading line
-            title_match = re.match(r'^#{1,5}\s+(.+)', section)
-            title = title_match.group(1).strip() if title_match else source
-
-            keywords = self._extract_keywords(section)
-            pages.append({
-                'source': source,
-                'title': title,
-                'content': section,
-                'keywords': keywords,
-            })
-
+            buf = f"{buf}\n\n{s}" if buf else s
+            if len(buf) >= 300:                            # merge small sections
+                chunks.append(buf)
+                buf = ''
+        if buf:
+            if chunks:
+                chunks[-1] += f"\n\n{buf}"
+            else:
+                chunks.append(buf)
+        pages = []
+        for content in chunks:
+            m = re.match(r'^#{1,5}\s+(.+)', content)
+            title = m.group(1).strip() if m else source
+            keywords = self._extract_keywords(content)
+            for t, c in self._extract_keywords(f"{title} {doc_title}").items():
+                keywords[t] += 3 * c                       # title + filename boost
+            pages.append({'source': source, 'title': title, 'content': content, 'keywords': keywords})
         return pages
 
     def _extract_keywords(self, text: str) -> Counter:
-        """Extract and count meaningful keywords from text."""
-        # Remove markdown formatting
         clean = re.sub(r'[#*_\[\]()>`|~\-]', ' ', text)
-        clean = re.sub(r'https?://\S+', '', clean)       # remove URLs
-        clean = re.sub(r'\S+@\S+', '', clean)             # remove emails
-        clean = re.sub(r'[^a-zA-Z0-9\u0900-\u097F\s]', ' ', clean)    # keep alphanumeric and Devanagari
-        tokens = clean.lower().split()
-        # Filter stop words and very short tokens
-        meaningful = [t for t in tokens if t not in self.STOP_WORDS and len(t) > 1]
-        return Counter(meaningful)
+        clean = re.sub(r'https?://\S+', '', clean)
+        clean = re.sub(r'\S+@\S+', '', clean)
+        clean = re.sub(r'[^a-zA-Z0-9\u0900-\u0963\u0966-\u097F\s]', ' ', clean)  # drops the danda
+        out = []
+        for t in clean.lower().split():
+            if re.search(r'[\u0900-\u097F]', t):
+                t = self._ne_stem(t)
+                if t in self.NE_STOP or len(t) < 2:
+                    continue
+            else:
+                if t in self.STOP_WORDS or len(t) <= 1:
+                    continue
+                t = self._en_stem(t)
+            out.append(t)
+        return Counter(out)
 
     def _build_idf(self):
-        """Compute inverse document frequency for each term."""
         n = len(self.pages)
         if n == 0:
             return
         doc_freq = Counter()
         for page in self.pages:
             doc_freq.update(page['keywords'].keys())
-        self.idf = {
-            term: math.log((n + 1) / (freq + 1)) + 1
-            for term, freq in doc_freq.items()
-        }
+            page['len'] = sum(page['keywords'].values())
+        self.idf = {term: math.log((n + 1) / (freq + 1)) + 1 for term, freq in doc_freq.items()}
+        self.avgdl = sum(p['len'] for p in self.pages) / n
 
-    def search_with_scores(self, query: str, top_k: int = 3) -> list:
-        """Find the top-K most relevant pages for query and return [(score, page)]."""
-        if not self.pages:
+    def search_with_scores(self, query: str, top_k: int = 3, min_score: float = 1.0) -> list:
+        q = self._extract_keywords(query)
+        if not q or not self.pages:
             return []
-
-        query_tokens = self._extract_keywords(query)
-        if not query_tokens:
-            return []
-
+        k1, b = 1.5, 0.75
         scored = []
         for page in self.pages:
             score = 0.0
-            for term, q_count in query_tokens.items():
-                if term in page['keywords']:
-                    tf = page['keywords'][term]
-                    idf = self.idf.get(term, 1.0)
-                    score += tf * idf * q_count
-            if score > 0:
+            for term in q:
+                tf = page['keywords'].get(term, 0)
+                if not tf:
+                    continue
+                idf = self.idf.get(term, 1.0)
+                score += idf * tf * (k1 + 1) / (tf + k1 * (1 - b + b * page['len'] / self.avgdl))
+            if score >= min_score:
                 scored.append((score, page))
-
         scored.sort(key=lambda x: x[0], reverse=True)
         return scored[:top_k]
 
@@ -247,7 +269,7 @@ def detect_language_command(text: str) -> tuple[str | None, bool]:
       - is_pure_switch_command: True if message was only asking to change language
     """
     clean = text.lower().strip()
-    clean_no_punct = re.sub(r'^[^\w]+|[^\w]+$', '', clean)
+    clean_no_punct = clean.strip(' \t\n.,!?;:।"\'')
 
     if clean_no_punct in ('english', 'angreji', 'अंग्रेजी'):
         return '1', True
@@ -259,8 +281,8 @@ def detect_language_command(text: str) -> tuple[str | None, bool]:
         r'\b(?:can\s+you\s+|please\s+)?(?:speak|talk)\s+(?:in\s+)?nepali\b',
         r'\bnepali\s+(?:please|language)\b',
         r'\bnepali\s+ma\s+(?:bol|bola|bolnu|kura\s+gara|kura\s+garnus|jawab\s+deu)\b',
-        r'नेपालीमा\s*(?:बोल|कुरा\s*गर|जवाफ\s*देउ|भन)',
-        r'नेपाली\s*(?:बोल|भाषामा\s*बोल)',
+        r'नेपालीमा\s*(?:बोल|कुरा\s*गर|जवाफ\s*देउ|भन)\S*',
+        r'नेपाली\s*(?:बोल|भाषामा\s*बोल)\S*',
     ]
 
     english_patterns = [
@@ -268,13 +290,13 @@ def detect_language_command(text: str) -> tuple[str | None, bool]:
         r'\b(?:can\s+you\s+|please\s+)?(?:speak|talk)\s+(?:in\s+)?(?:english|angreji)\b',
         r'\b(?:english|angreji)\s+(?:please|language)\b',
         r'\b(?:english|angreji)\s+ma\s+(?:bol|bola|bolnu|kura\s+gara|kura\s+garnus|jawab\s+deu)\b',
-        r'अंग्रेजीमा\s*(?:बोल|कुरा\s*गर|जवाफ\s*देउ|भन)',
-        r'अंग्रेजी\s*(?:बोल|भाषामा\s*बोल)',
+        r'अंग्रेजीमा\s*(?:बोल|कुरा\s*गर|जवाफ\s*देउ|भन)\S*',
+        r'अंग्रेजी\s*(?:बोल|भाषामा\s*बोल)\S*',
     ]
 
     def check_purity(phrase, pat):
         remainder = re.sub(pat, '', phrase, flags=re.I).strip()
-        remainder = re.sub(r'\b(can you|could you|please|from now on|now|hai|na|kripaya|la|ok|okay)\b', '', remainder, flags=re.I).strip(' ,.!?')
+        remainder = re.sub(r'\b(can you|could you|please|from now on|now|hai|na|kripaya|la|ok|okay)\b', '', remainder, flags=re.I).strip(' ,.!?।')
         return len(remainder) == 0
 
     for pat in nepali_patterns:
@@ -328,6 +350,11 @@ CONTEXT:
 {context}
 """
 
+SESSIONS = {}
+
+NO_INFO_EN = "I don't have information about that in my knowledge base. I can only help with questions about Sunway College Kathmandu, its programs, staff, and RAIN incubation center."
+NO_INFO_NE = "मसँग मेरो ज्ञानकोषमा यस बारे जानकारी छैन। म केवल सनवे कलेज काठमाडौंका कार्यक्रम, कर्मचारी र RAIN इन्क्युबेशन सेन्टर सम्बन्धी प्रश्नहरूमा मद्दत गर्न सक्छु।"
+
 GREETING_WORDS = frozenset([
     'hi', 'hello', 'hey', 'namaste', 'namaskar', 'greetings', 'good morning',
     'good afternoon', 'good evening', 'sup', 'yo', 'howdy', 'thanks',
@@ -335,50 +362,61 @@ GREETING_WORDS = frozenset([
 ])
 
 
+SMALLTALK_RE = re.compile(
+    r"(your name|who are you|what are you|how are you|thank|bye|"
+    r"नमस्ते|नमस्कार|धन्यवाद|तपाईंको नाम|तिम्रो नाम|तिमी को हौ|तपाईं को हुनुहुन्छ|"
+    r"timro nam|tapai ko nam|kasto cha|dhanyabad)", re.I)
+
+
 def is_greeting(text: str) -> bool:
-    """Check if the message is a simple greeting/farewell."""
-    cleaned = re.sub(r'[^\w\s]', '', text.lower()).strip()
-    return cleaned in GREETING_WORDS or len(cleaned.split()) <= 2 and any(
-        w in cleaned.split() for w in GREETING_WORDS
-    )
+    cleaned = re.sub(r'[^\w\s\u0900-\u097F]', '', text.lower()).strip()
+    words = cleaned.split()
+    if cleaned in GREETING_WORDS or (0 < len(words) <= 2 and all(w in GREETING_WORDS for w in words)):
+        return True
+    return 0 < len(words) <= 6 and bool(SMALLTALK_RE.search(text.lower()))
 
 
-def build_system_prompt_with_retrieval(user_message: str, lang_code: str) -> tuple[str, list]:
-    """Build the language-specific system prompt and return retrieved chunk metadata."""
+def rewrite_query(text: str, history=None) -> str:
+    """Ask Gemma to turn a Nepali/Roman Nepali question into English search keywords."""
+    prev = next((m['content'] for m in reversed(history or []) if m['role'] == 'user'), '')
+    content = f"Previous question: {prev}\nQuestion: {text}" if prev else text
+    try:
+        r = requests.post(OLLAMA_URL, json={
+            'model': MODEL,
+            'messages': [
+                {'role': 'system', 'content': 'Convert the question into 3-8 English search keywords about Sunway College Kathmandu. Output only the keywords.'},
+                {'role': 'user', 'content': content}],
+            'think': False, 'stream': False, 'keep_alive': -1,
+            'options': {'temperature': 0, 'num_predict': 30, 'num_ctx': 4096}}, timeout=15)
+        return r.json()['message']['content'].strip()
+    except Exception:
+        return text
+
+
+def build_system_prompt_with_retrieval(user_message: str, lang_code: str, history=None):
+    """Returns (system_prompt, chunks_meta, grounded). grounded=False means skip the LLM."""
     is_en = (lang_code == '1')
     base = SYSTEM_BASE_EN if is_en else SYSTEM_BASE_NE
     context_tpl = CONTEXT_INSTRUCTION_EN if is_en else CONTEXT_INSTRUCTION_NE
 
     if is_greeting(user_message):
-        return base, []
+        return base, [], True
 
-    scored_results = page_index.search_with_scores(user_message, top_k=3)
-    if not scored_results:
-        context = "(No relevant information found in the knowledge base.)"
-        chunks_meta = []
-    else:
-        context_parts = []
-        chunks_meta = []
-        for score, page in scored_results:
-            context_parts.append(
-                f"--- Source: {page['source']} | Section: {page['title']} ---\n"
-                f"{page['content']}"
-            )
-            chunks_meta.append({
-                'source': page['source'],
-                'title': page['title'],
-                'score': round(score, 3),
-                'content': page['content']
-            })
-        context = "\n\n".join(context_parts)
+    last_user = next((m['content'] for m in reversed(history or []) if m['role'] == 'user'), '')
+    scored = page_index.search_with_scores(user_message, top_k=3)
+    if not scored and last_user:
+        scored = page_index.search_with_scores(f"{last_user} {user_message}", top_k=3)
+    if not scored:
+        scored = page_index.search_with_scores(rewrite_query(user_message, history), top_k=3)
+    if not scored:
+        return base, [], False
 
-    return base + context_tpl.format(context=context), chunks_meta
-
-
-def build_system_prompt(user_message: str, lang_code: str) -> str:
-    """Build the language-specific system prompt, injecting relevant page context if available."""
-    prompt, _ = build_system_prompt_with_retrieval(user_message, lang_code)
-    return prompt
+    parts, meta = [], []
+    for score, page in scored:
+        parts.append(f"--- Source: {page['source']} | Section: {page['title']} ---\n{page['content'][:1500]}")
+        meta.append({'source': page['source'], 'title': page['title'],
+                     'score': round(score, 3), 'content': page['content']})
+    return base + context_tpl.format(context="\n\n".join(parts)), meta, True
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -395,6 +433,32 @@ def generate_piper_tts(text: str, lang: str = 'en') -> bytes | None:
         voice.synthesize_wav(text, wav_file)
     return buf.getvalue()
 
+
+
+import threading
+
+def eval_async(trace_id):
+    def _run():
+        try:
+            evaluate_trace(trace_id, use_llm_judge=False)
+        except Exception as e:
+            print(f"Eval error: {e}")
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def canned_response(text, stream_requested, lang_iso, code, trace_id):
+    meta = {'lang': lang_iso, 'language': code, 'trace_id': trace_id}
+    hdrs = {'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no',
+            'Connection': 'keep-alive', 'X-Penny-Trace-Id': trace_id}
+    if stream_requested:
+        def gen():
+            yield f"data: {json.dumps({'type': 'start', **meta})}\n\n"
+            yield f"data: {json.dumps({'type': 'chunk', 'content': text})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'response': text, **meta})}\n\n"
+        return Response(gen(), mimetype='text/event-stream', headers=hdrs)
+    resp = jsonify({'response': text, **meta})
+    resp.headers['X-Penny-Trace-Id'] = trace_id
+    return resp
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -532,10 +596,7 @@ def api_chat():
             status='switch_command',
             trace_id=trace_id
         )
-        try:
-            evaluate_trace(trace_id, use_llm_judge=False)
-        except Exception:
-            pass
+        eval_async(trace_id)
 
         if stream_requested:
             def switch_stream():
@@ -558,50 +619,51 @@ def api_chat():
         resp.headers['X-Penny-Trace-Id'] = trace_id
         return resp
 
-    # 3. Build context-aware system prompt and measure retrieval
+    # 3. Retrieval with history
     greeting_flag = is_greeting(user_message)
+    if len(SESSIONS) > 200:
+        SESSIONS.pop(next(iter(SESSIONS)))
+    history = SESSIONS.setdefault(session_id or 'default', deque(maxlen=6))
     retrieval_start = time.time()
-    system_prompt, retrieval_chunks = build_system_prompt_with_retrieval(user_message, active_lang_code)
+    system_prompt, retrieval_chunks, grounded = build_system_prompt_with_retrieval(
+        user_message, active_lang_code, history)
     retrieval_lat = (time.time() - retrieval_start) * 1000
 
-    # Initial trace logging
+    # 4. Nothing found: canned refusal, no LLM call
+    if not grounded:
+        reply = NO_INFO_EN if active_lang_code == '1' else NO_INFO_NE
+        log_chat_interaction(
+            user_query=user_message, language_code=active_lang_code, retrieval_chunks=[],
+            system_prompt="(No context found - canned reply)", model_response=reply,
+            model_name=MODEL, session_id=session_id, is_greeting=False,
+            stream_requested=stream_requested, retrieval_latency_ms=retrieval_lat,
+            total_latency_ms=(time.time() - start_time) * 1000,
+            status='no_context', trace_id=trace_id)
+        eval_async(trace_id)
+        return canned_response(reply, stream_requested, lang_iso, active_lang_code, trace_id)
+
     log_chat_interaction(
-        user_query=user_message,
-        language_code=active_lang_code,
-        retrieval_chunks=retrieval_chunks,
-        system_prompt=system_prompt,
-        model_name=MODEL,
-        session_id=session_id,
-        is_greeting=greeting_flag,
-        stream_requested=stream_requested,
-        retrieval_latency_ms=retrieval_lat,
-        status='running',
-        trace_id=trace_id
-    )
+        user_query=user_message, language_code=active_lang_code,
+        retrieval_chunks=retrieval_chunks, system_prompt=system_prompt, model_name=MODEL,
+        session_id=session_id, is_greeting=greeting_flag, stream_requested=stream_requested,
+        retrieval_latency_ms=retrieval_lat, status='running', trace_id=trace_id)
 
     ollama_payload = {
         'model': MODEL,
-        'messages': [
-            {'role': 'system', 'content': system_prompt},
-            {'role': 'user', 'content': user_message},
-        ],
+        'messages': [{'role': 'system', 'content': system_prompt}, *history,
+                     {'role': 'user', 'content': user_message}],
         'think': False,
         'stream': stream_requested,
-        'keep_alive': -1,  # Keep model in GPU VRAM permanently (eliminates reload delay)
-        'options': {
-            'temperature': 0.7,
-            'num_predict': 180,
-            'num_ctx': 2048,
-        }
+        'keep_alive': -1,
+        'options': {'temperature': 0.2, 'num_predict': 150, 'num_ctx': 4096},
     }
-
+    fallback_text = "I didn't quite get that." if active_lang_code == '1' else "मैले बुझिन, कृपया फेरि भन्नुहोस्।"
     llm_start = time.time()
 
     if stream_requested:
         def stream_chat():
-            # Send initial metadata
             yield f"data: {json.dumps({'type': 'start', 'lang': lang_iso, 'language': active_lang_code, 'trace_id': trace_id})}\n\n"
-            full_response_parts = []
+            parts = []
             try:
                 res = requests.post(OLLAMA_URL, json=ollama_payload, stream=True, timeout=60)
                 res.raise_for_status()
@@ -609,95 +671,76 @@ def api_chat():
                     if not line:
                         continue
                     try:
-                        line_str = line.decode('utf-8') if isinstance(line, bytes) else line
-                        chunk = json.loads(line_str)
+                        chunk = json.loads(line.decode('utf-8') if isinstance(line, bytes) else line)
                     except Exception:
                         continue
-
                     content = chunk.get('message', {}).get('content', '')
                     if content:
-                        full_response_parts.append(content)
+                        parts.append(content)
                         yield f"data: {json.dumps({'type': 'chunk', 'content': content})}\n\n"
-
                     if chunk.get('done', False):
                         break
 
-                full_text = "".join(full_response_parts).strip()
-                # Clean any lingering think/html tags
+                full_text = "".join(parts).strip()
                 full_text = re.sub(r'<think>[\s\S]*?</think>', '', full_text).strip()
-                full_text = re.sub(r'<[^>]+>', '', full_text).strip()
-                if not full_text:
-                    full_text = "I didn't quite get that." if active_lang_code == '1' else "मैले बुझिन, कृपया फेरि भन्नुहोस्।"
+                full_text = re.sub(r'<[^>]+>', '', full_text).strip() or fallback_text
 
+                history.append({'role': 'user', 'content': user_message})
+                history.append({'role': 'assistant', 'content': full_text})
                 llm_lat = (time.time() - llm_start) * 1000
-                total_lat = (time.time() - start_time) * 1000
-
-                update_trace_response(trace_id, full_text, llm_lat, total_lat, status='success')
-                try:
-                    evaluate_trace(trace_id, use_llm_judge=False)
-                except Exception as e:
-                    print(f"Eval diagnosis error: {e}")
-
+                update_trace_response(trace_id, full_text, llm_lat, (time.time() - start_time) * 1000, status='success')
+                eval_async(trace_id)
                 yield f"data: {json.dumps({'type': 'done', 'response': full_text, 'lang': lang_iso, 'language': active_lang_code, 'trace_id': trace_id})}\n\n"
 
+            except GeneratorExit:   # client disconnected mid-stream
+                update_trace_response(trace_id, "".join(parts), (time.time() - llm_start) * 1000,
+                                      (time.time() - start_time) * 1000, status='aborted')
+                raise
             except Exception as e:
                 print(f"Ollama stream error: {e}")
                 err_msg = "Cannot reach Ollama. Make sure it's running." if "ConnectionError" in str(e) else f"Error: {e}"
-                llm_lat = (time.time() - llm_start) * 1000
-                total_lat = (time.time() - start_time) * 1000
-                update_trace_response(trace_id, f"Error: {err_msg}", llm_lat, total_lat, status='error')
+                update_trace_response(trace_id, f"Error: {err_msg}", (time.time() - llm_start) * 1000,
+                                      (time.time() - start_time) * 1000, status='error')
                 yield f"data: {json.dumps({'type': 'error', 'error': err_msg, 'trace_id': trace_id})}\n\n"
 
         return Response(stream_chat(), mimetype='text/event-stream', headers={
-            'Cache-Control': 'no-cache',
-            'X-Accel-Buffering': 'no',
-            'Connection': 'keep-alive',
-            'X-Penny-Trace-Id': trace_id
-        })
+            'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no',
+            'Connection': 'keep-alive', 'X-Penny-Trace-Id': trace_id})
 
-    # Non-streaming fallback
+    # Non-streaming
     try:
         res = requests.post(OLLAMA_URL, json=ollama_payload, timeout=60)
         res.raise_for_status()
-        result = res.json()
+        text = res.json().get('message', {}).get('content', '')
+        text = re.sub(r'<think>[\s\S]*?</think>', '', text).strip()
+        text = re.sub(r'<[^>]+>', '', text)
+        text = re.sub(r'\s+', ' ', text).strip() or fallback_text
 
-        response_text = result.get('message', {}).get('content', "I didn't quite get that.")
-        response_text = re.sub(r'<think>[\s\S]*?</think>', '', response_text).strip()
-        response_text = re.sub(r'<[^>]+>', '', response_text).strip()
-        response_text = re.sub(r'\s+', ' ', response_text).strip()
-
-        if not response_text:
-            response_text = "I didn't quite get that." if active_lang_code == '1' else "मैले बुझिन, कृपया फेरि भन्नुहोस्।"
-
-        llm_lat = (time.time() - llm_start) * 1000
-        total_lat = (time.time() - start_time) * 1000
-
-        update_trace_response(trace_id, response_text, llm_lat, total_lat, status='success')
-        try:
-            evaluate_trace(trace_id, use_llm_judge=False)
-        except Exception as e:
-            print(f"Eval diagnosis error: {e}")
-
-        resp_obj = jsonify({
-            'response': response_text,
-            'lang': lang_iso,
-            'language': active_lang_code,
-            'trace_id': trace_id
-        })
+        history.append({'role': 'user', 'content': user_message})
+        history.append({'role': 'assistant', 'content': text})
+        update_trace_response(trace_id, text, (time.time() - llm_start) * 1000,
+                              (time.time() - start_time) * 1000, status='success')
+        eval_async(trace_id)
+        resp_obj = jsonify({'response': text, 'lang': lang_iso, 'language': active_lang_code, 'trace_id': trace_id})
         resp_obj.headers['X-Penny-Trace-Id'] = trace_id
         return resp_obj
 
     except requests.exceptions.ConnectionError:
-        llm_lat = (time.time() - llm_start) * 1000
-        total_lat = (time.time() - start_time) * 1000
-        update_trace_response(trace_id, "Cannot reach Ollama", llm_lat, total_lat, status='error')
-        return jsonify({'error': 'Cannot reach Ollama. Make sure it\'s running on localhost:11434'}), 503
+        update_trace_response(trace_id, "Cannot reach Ollama", (time.time() - llm_start) * 1000,
+                              (time.time() - start_time) * 1000, status='error')
+        return jsonify({'error': "Cannot reach Ollama. Make sure it's running on localhost:11434"}), 503
     except Exception as e:
         print(f"Chat Error: {e}")
-        llm_lat = (time.time() - llm_start) * 1000
-        total_lat = (time.time() - start_time) * 1000
-        update_trace_response(trace_id, str(e), llm_lat, total_lat, status='error')
+        update_trace_response(trace_id, str(e), (time.time() - llm_start) * 1000,
+                              (time.time() - start_time) * 1000, status='error')
         return jsonify({'error': f'Something went wrong: {str(e)}'}), 500
+
+
+@app.route('/api/reload', methods=['POST'])
+def reload_index():
+    global page_index
+    page_index = PageIndex(DATA_DIR)
+    return jsonify({'ok': True, 'pages': len(page_index.pages)})
 
 
 # ═══════════════════════════════════════════════════════════════
