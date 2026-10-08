@@ -343,28 +343,42 @@ def is_greeting(text: str) -> bool:
     )
 
 
-def build_system_prompt(user_message: str, lang_code: str) -> str:
-    """Build the language-specific system prompt, injecting relevant page context if available."""
+def build_system_prompt_with_retrieval(user_message: str, lang_code: str) -> tuple[str, list]:
+    """Build the language-specific system prompt and return retrieved chunk metadata."""
     is_en = (lang_code == '1')
     base = SYSTEM_BASE_EN if is_en else SYSTEM_BASE_NE
     context_tpl = CONTEXT_INSTRUCTION_EN if is_en else CONTEXT_INSTRUCTION_NE
 
     if is_greeting(user_message):
-        return base
+        return base, []
 
-    results = page_index.search(user_message, top_k=3)
-    if not results:
+    scored_results = page_index.search_with_scores(user_message, top_k=3)
+    if not scored_results:
         context = "(No relevant information found in the knowledge base.)"
+        chunks_meta = []
     else:
         context_parts = []
-        for page in results:
+        chunks_meta = []
+        for score, page in scored_results:
             context_parts.append(
                 f"--- Source: {page['source']} | Section: {page['title']} ---\n"
                 f"{page['content']}"
             )
+            chunks_meta.append({
+                'source': page['source'],
+                'title': page['title'],
+                'score': round(score, 3),
+                'content': page['content']
+            })
         context = "\n\n".join(context_parts)
 
-    return base + context_tpl.format(context=context)
+    return base + context_tpl.format(context=context), chunks_meta
+
+
+def build_system_prompt(user_message: str, lang_code: str) -> str:
+    """Build the language-specific system prompt, injecting relevant page context if available."""
+    prompt, _ = build_system_prompt_with_retrieval(user_message, lang_code)
+    return prompt
 
 
 # ═══════════════════════════════════════════════════════════════
