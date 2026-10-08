@@ -345,7 +345,10 @@ def diagnose_trace_heuristic(trace: Dict[str, Any]) -> Dict[str, Any]:
     # Overlap between model answer and retrieved context
     grounding_overlap = len(response_words.intersection(retrieved_words)) / max(1, len(response_words))
 
-    if grounding_overlap < 0.15 and not corpus_has_answer:
+    # For cross-lingual answers (English context -> Nepali response), direct lexical overlap is low,
+    # so we verify that chunks were retrieved and response is compliant
+    is_cross_lingual = (lang_code == '0') and bool(re.search(r'[\u0900-\u097F]', model_response))
+    if not is_cross_lingual and grounding_overlap < 0.15 and not corpus_has_distinctive:
         return {
             'verdict': 'MODEL_ISSUE',
             'confidence': 0.85,
